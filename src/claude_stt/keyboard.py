@@ -184,16 +184,12 @@ def _output_via_injection(
         if not _PYNPUT_AVAILABLE:
             _warn_pynput_missing()
             return _output_via_clipboard(text, config)
-        # Restore focus to original window if provided
-        if window_info is not None:
-            if not restore_focus(window_info):
-                # Can't restore focus (window closed?), fall back to clipboard
-                _logger.warning("Focus restore failed; falling back to clipboard")
-                return _output_via_clipboard(text, config)
+        # Skip focus restore - type into whatever window is currently active.
+        # Focus restore via AppleScript can activate wrong windows (e.g. Zed).
 
-        # Type the text
+        # Type the text with trailing space for consecutive dictations
         kb = get_keyboard()
-        kb.type(text)
+        kb.type(text + " ")
 
         if config.sound_effects:
             play_sound("complete")

@@ -63,21 +63,50 @@ class HotkeyListener:
             raise HotkeyError(message)
 
         # Parse the hotkey
+        self._side_specific = False
         self._hotkey_keys = self._parse_hotkey(hotkey)
         if not self._hotkey_keys:
             raise HotkeyError(f"Hotkey '{hotkey}' did not map to any keys")
+
+    # Side-specific modifier keys that bypass normal normalization
+    _SIDE_SPECIFIC_KEYS = {
+        "cmd_r": "cmd_r", "cmd_right": "cmd_r", "right_cmd": "cmd_r",
+        "cmd_l": "cmd_l", "cmd_left": "cmd_l", "left_cmd": "cmd_l",
+        "ctrl_r": "ctrl_r", "ctrl_right": "ctrl_r", "right_ctrl": "ctrl_r",
+        "ctrl_l": "ctrl_l", "ctrl_left": "ctrl_l", "left_ctrl": "ctrl_l",
+        "shift_r": "shift_r", "shift_right": "shift_r", "right_shift": "shift_r",
+        "shift_l": "shift_l", "shift_left": "shift_l", "left_shift": "shift_l",
+        "alt_r": "alt_r", "alt_right": "alt_r", "right_alt": "alt_r",
+        "alt_l": "alt_l", "alt_left": "alt_l", "left_alt": "alt_l",
+    }
 
     def _parse_hotkey(self, hotkey_str: str) -> set:
         """Parse hotkey string to a set of keys.
 
         Args:
-            hotkey_str: Hotkey like "<ctrl>+<shift>+space" or "ctrl+shift+space".
+            hotkey_str: Hotkey like "<ctrl>+<shift>+space" or "ctrl+shift+space"
+                        or "cmd_r" for side-specific single modifier keys.
 
         Returns:
             Set of key objects.
         """
         if not hotkey_str.strip():
             raise HotkeyError("Hotkey cannot be empty")
+
+        # Check for side-specific single-key hotkeys (e.g. "cmd_r")
+        parts = [p.strip().lower() for p in hotkey_str.split("+") if p.strip()]
+        side_keys = set()
+        for part in parts:
+            if part in self._SIDE_SPECIFIC_KEYS:
+                key_name = self._SIDE_SPECIFIC_KEYS[part]
+                try:
+                    side_keys.add(getattr(keyboard.Key, key_name))
+                except AttributeError:
+                    raise HotkeyError(f"Key '{part}' not supported by pynput")
+
+        if side_keys:
+            self._side_specific = True
+            return side_keys
 
         try:
             normalized = self._normalize_hotkey_string(hotkey_str)
@@ -192,6 +221,10 @@ class HotkeyListener:
                     return mac_vk_map[key.vk]
 
         # Handle left/right modifier variants
+        # Skip normalization if hotkey uses side-specific keys
+        if self._side_specific:
+            return key
+
         if key in (keyboard.Key.ctrl_l, keyboard.Key.ctrl_r):
             return keyboard.Key.ctrl
         if key in (keyboard.Key.shift_l, keyboard.Key.shift_r):

@@ -48,6 +48,10 @@ class Config:
     # Feedback settings
     sound_effects: bool = True
 
+    # Language settings
+    language: str | None = None
+    initial_prompt: str | None = None
+
     @classmethod
     def get_config_dir(cls) -> Path:
         """Get the configuration directory path."""
@@ -103,6 +107,8 @@ class Config:
                 audio_device=stt_config.get("audio_device", cls.audio_device),
                 output_mode=stt_config.get("output_mode", cls.output_mode),
                 sound_effects=stt_config.get("sound_effects", cls.sound_effects),
+                language=stt_config.get("language", cls.language),
+                initial_prompt=stt_config.get("initial_prompt", cls.initial_prompt),
             )
             config = config.validate()
             if legacy_path and tomli_w is not None:
@@ -140,6 +146,8 @@ class Config:
                 "audio_device": self.audio_device,
                 "output_mode": self.output_mode,
                 "sound_effects": self.sound_effects,
+                **({"language": self.language} if self.language else {}),
+                **({"initial_prompt": self.initial_prompt} if self.initial_prompt else {}),
             }
         }
 
@@ -174,7 +182,7 @@ class Config:
             logger.warning("Invalid mode '%s'; defaulting to 'toggle'", self.mode)
             self.mode = "toggle"
 
-        if self.engine not in ("moonshine", "whisper"):
+        if self.engine not in ("moonshine", "whisper", "mlx"):
             logger.warning("Invalid engine '%s'; defaulting to 'moonshine'", self.engine)
             self.engine = "moonshine"
 

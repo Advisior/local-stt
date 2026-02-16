@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import logging
+import os
 import queue
 import signal
+import subprocess
+import sys
 import threading
 import time
 from typing import Optional
@@ -13,6 +16,7 @@ import numpy as np
 
 from .config import Config
 from .engine_factory import build_engine
+from .formatter import fix_transcription_errors, format_paragraphs
 from .engines import STTEngine
 from .errors import EngineError, HotkeyError, RecorderError
 from .hotkey import HotkeyListener
@@ -43,6 +47,8 @@ class STTDaemon:
         # Recording state
         self._record_start_time: float = 0
         self._original_window: Optional[WindowInfo] = None
+        # Overlay subprocess
+        self._overlay_proc: Optional[subprocess.Popen] = None
         # Threading
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
@@ -51,6 +57,42 @@ class STTDaemon:
         )
         self._transcribe_thread: Optional[threading.Thread] = None
         self._logger = logging.getLogger(__name__)
+
+    def _start_overlay(self) -> None:
+        """Start the overlay indicator subprocess."""
+        try:
+            overlay_module = os.path.join(
+                os.path.dirname(__file__), "overlay.py"
+            )
+            self._overlay_proc = subprocess.Popen(
+                [sys.executable, overlay_module],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            self._logger.info("Overlay indicator started (PID %d)", self._overlay_proc.pid)
+        except Exception:
+            self._logger.debug("Overlay indicator not available", exc_info=True)
+            self._overlay_proc = None
+
+    def _overlay_send(self, command: str) -> None:
+        """Send a command to the overlay subprocess."""
+        if self._overlay_proc and self._overlay_proc.poll() is None:
+            try:
+                self._overlay_proc.stdin.write((command + "\n").encode())
+                self._overlay_proc.stdin.flush()
+            except (BrokenPipeError, OSError):
+                self._overlay_proc = None
+
+    def _stop_overlay(self) -> None:
+        """Stop the overlay subprocess."""
+        if self._overlay_proc and self._overlay_proc.poll() is None:
+            self._overlay_send("QUIT")
+            try:
+                self._overlay_proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                self._overlay_proc.kill()
+            self._overlay_proc = None
 
     def _init_components(self) -> bool:
         """Initialize all components.
@@ -140,12 +182,19 @@ class STTDaemon:
                 self._logger.info("No speech detected")
                 if self.config.sound_effects:
                     play_sound("warning")
+                self._overlay_send("CANCEL")
                 continue
 
+            # Fix common mis-transcriptions, then format paragraphs
+            text = fix_transcription_errors(text)
+            text = format_paragraphs(text)
+
+            word_count = len(text.split())
             display_text = text[:100] + "..." if len(text) > 100 else text
             self._logger.info("Transcribed: %s", display_text)
             if not output_text(text, window_info, self.config):
                 self._logger.warning("Failed to output transcription")
+            self._overlay_send(f"DONE {word_count}")
 
     def _on_recording_start(self):
         """Called when recording should start."""
@@ -164,6 +213,7 @@ class STTDaemon:
                 self._logger.info("Recording started")
                 if self.config.sound_effects:
                     play_sound("start")
+                self._overlay_send("RECORDING")
             else:
                 self._logger.error("Audio recorder failed to start")
                 self._recording = False
@@ -189,6 +239,7 @@ class STTDaemon:
             self._logger.info("Recording stopped (%.1fs)", elapsed)
             if self.config.sound_effects:
                 play_sound("stop")
+            self._overlay_send("TRANSCRIBING")
 
         # Transcribe outside the lock
         if audio is not None and len(audio) > 0:
@@ -232,6 +283,9 @@ class STTDaemon:
             raise SystemExit(1)
 
         self._logger.info("Model loaded. Ready for voice input.")
+
+        # Start overlay indicator
+        self._start_overlay()
 
         # Start hotkey listener
         if not self._hotkey.start():
@@ -291,5 +345,7 @@ class STTDaemon:
 
         if self._hotkey:
             self._hotkey.stop()
+
+        self._stop_overlay()
 
         self._logger.info("claude-stt daemon stopped.")

@@ -27,6 +27,8 @@ class WhisperEngine:
         model_name: str = "medium",
         device: Optional[str] = None,
         compute_type: Optional[str] = None,
+        language: Optional[str] = None,
+        initial_prompt: Optional[str] = None,
     ):
         self.model_name = model_name
         self.device = device or os.environ.get("CLAUDE_STT_WHISPER_DEVICE", "cpu")
@@ -34,6 +36,8 @@ class WhisperEngine:
             "CLAUDE_STT_WHISPER_COMPUTE_TYPE",
             "int8",
         )
+        self.language = language or os.environ.get("CLAUDE_STT_LANGUAGE")
+        self.initial_prompt = initial_prompt or os.environ.get("CLAUDE_STT_INITIAL_PROMPT")
         self._model: Optional[object] = None
         self._logger = logging.getLogger(__name__)
 
@@ -62,7 +66,12 @@ class WhisperEngine:
         try:
             if audio.dtype != np.float32:
                 audio = audio.astype(np.float32)
-            segments, _info = self._model.transcribe(audio)
+            transcribe_kwargs = {}
+            if self.language:
+                transcribe_kwargs["language"] = self.language
+            if self.initial_prompt:
+                transcribe_kwargs["initial_prompt"] = self.initial_prompt
+            segments, _info = self._model.transcribe(audio, **transcribe_kwargs)
             text = " ".join(segment.text.strip() for segment in segments)
             return text.strip()
         except Exception:
