@@ -18,7 +18,7 @@ except Exception as exc:
 
 from .config import Config, is_wayland
 from .sounds import play_sound
-from .window import WindowInfo, restore_focus
+from .window import WindowInfo
 
 # Global keyboard controller
 _keyboard: Optional[Controller] = None

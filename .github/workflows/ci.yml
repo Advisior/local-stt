@@ -13,6 +13,9 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.10", "3.11", "3.12", "3.13"]
+        exclude:
+          - os: macos-latest
+            python-version: "3.10"
     steps:
       - uses: actions/checkout@v4
 
@@ -35,7 +38,7 @@ jobs:
 
       - name: Lint with ruff
         run: |
-          uv run ruff check src/
+          uv tool run ruff check src/
 
       - name: Run tests
         shell: bash
