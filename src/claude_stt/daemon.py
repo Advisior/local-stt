@@ -81,8 +81,8 @@ def _write_pid_file(pid: int) -> None:
         ) as handle:
             temp_file = Path(handle.name)
             handle.write(json.dumps(data))
+        os.chmod(temp_file, 0o600)
         os.replace(temp_file, pid_file)
-        os.chmod(pid_file, 0o600)
     finally:
         if temp_file and temp_file.exists():
             try:

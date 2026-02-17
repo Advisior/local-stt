@@ -47,7 +47,18 @@ if [[ -f "$SWIFT_DIR/Sources/Resources/advisior_logo.png" ]]; then
     cp "$SWIFT_DIR/Sources/Resources/advisior_logo.png" "$APP_DIR/Contents/Resources/"
 fi
 
-# 4. Info.plist
+# 4. Generate app icon
+if [[ -f "$SCRIPT_DIR/generate-icon.swift" ]]; then
+    echo "Generating app icon..."
+    swift "$SCRIPT_DIR/generate-icon.swift" "$PROJECT_DIR" 2>&1 | tail -1
+    ICONSET="$DIST_DIR/LocalSTT.iconset"
+    if [[ -d "$ICONSET" ]]; then
+        iconutil -c icns "$ICONSET" -o "$APP_DIR/Contents/Resources/AppIcon.icns"
+        rm -rf "$ICONSET"
+    fi
+fi
+
+# 5. Info.plist
 cat > "$APP_DIR/Contents/Info.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -65,6 +76,8 @@ cat > "$APP_DIR/Contents/Info.plist" << PLIST
     <string>${VERSION}</string>
     <key>CFBundleExecutable</key>
     <string>${APP_NAME}</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>LSUIElement</key>
@@ -74,6 +87,18 @@ cat > "$APP_DIR/Contents/Info.plist" << PLIST
 </dict>
 </plist>
 PLIST
+
+# 6. Code sign with stable identity (preserves macOS permissions across rebuilds)
+SIGN_IDENTITY="Local-STT Developer"
+if security find-identity -v -p codesigning 2>/dev/null | grep -q "$SIGN_IDENTITY"; then
+    codesign -s "$SIGN_IDENTITY" --force --deep "$APP_DIR" 2>&1
+    echo "Signed with: $SIGN_IDENTITY"
+else
+    codesign -s - --force --deep "$APP_DIR" 2>&1
+    echo "WARNING: No '$SIGN_IDENTITY' identity found. Using ad-hoc signing."
+    echo "  Permissions will need to be re-granted after each rebuild."
+    echo "  Run: bash scripts/create-signing-identity.sh"
+fi
 
 echo ""
 echo "Built: $APP_DIR (v${VERSION})"

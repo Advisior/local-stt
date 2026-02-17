@@ -164,8 +164,8 @@ class Config:
             ) as handle:
                 temp_file = Path(handle.name)
                 tomli_w.dump(data, handle)
+            os.chmod(temp_file, 0o600)
             os.replace(temp_file, config_path)
-            self._ensure_secure_permissions()
             return True
         except Exception:
             logger.exception("Failed to save config")

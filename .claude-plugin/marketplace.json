@@ -9,7 +9,7 @@
       "name": "local-stt",
       "source": "./",
       "description": "Speech-to-text input for Claude Code with live streaming dictation. Hold a hotkey, speak, and your words appear in the input field.",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "author": {
         "name": "Advisior GmbH",
         "url": "https://github.com/Advisior"

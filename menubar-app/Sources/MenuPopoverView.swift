@@ -18,6 +18,11 @@ struct MenuPopoverView: View {
             // MARK: - Actions
             actionsSection
 
+            // MARK: - Permissions Warning
+            if !daemon.permissionsReady && daemon.isRunning {
+                permissionsWarning
+            }
+
             Divider()
                 .padding(.horizontal, 12)
 
@@ -85,7 +90,7 @@ struct MenuPopoverView: View {
             PopoverMenuItem(
                 icon: "waveform",
                 title: "Toggle Recording",
-                shortcut: "\u{2318}R",
+                shortcut: config.hotkeyLabel,
                 disabled: !daemon.isRunning
             ) {
                 daemon.toggleRecording()
@@ -122,6 +127,37 @@ struct MenuPopoverView: View {
             }
         }
         .padding(.vertical, 6)
+    }
+
+    // MARK: - Permissions Warning
+
+    private var permissionsWarning: some View {
+        Button {
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy") {
+                NSWorkspace.shared.open(url)
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Permissions needed")
+                        .font(.system(size: 11, weight: .medium))
+                    Text("Grant Accessibility access, then restart daemon")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "arrow.right.circle")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(Color.orange.opacity(0.08))
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Footer

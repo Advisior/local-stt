@@ -1,161 +1,240 @@
-# Claude STT
+# Local-STT
 
-Speech-to-text input for Claude Code. Hold a hotkey, speak, and your words appear in the input field — all processed locally.
+Free, local, private speech-to-text for your Mac. No cloud, no API costs, no data leaves your device.
 
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
 ![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue.svg)
-![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)
+![Platform](https://img.shields.io/badge/Platform-macOS_(Apple_Silicon)-blue.svg)
+![GitHub release](https://img.shields.io/github/v/release/Advisior/local-stt?include_prereleases)
 
-![Claude STT in action](preview.png)
+> Hold right CMD, speak, release — text appears at your cursor. Works in any app.
 
-## Install
-
-Inside a Claude Code instance, run the following commands:
-
-**Step 1: Add the marketplace**
-```
-/plugin marketplace add Advisior/local-stt
-```
-
-**Step 2: Install the plugin**
-```
-/plugin install claude-stt
-```
-
-**Step 3: Run setup**
-```
-/claude-stt:setup
-```
-
-Done! Press **Ctrl+Shift+Space** to start recording, press again to stop and transcribe.
-
-> **Note**: Setup installs dependencies (uv if available, otherwise a local `.venv`),
-> downloads the Moonshine model (~200MB), and checks microphone permissions.
+<!-- TODO: Replace with actual screenshots of menu bar app + settings -->
+<!-- ![Local-STT Menu Bar](docs/screenshots/menubar.png) -->
+<!-- ![Local-STT Settings](docs/screenshots/settings.png) -->
 
 ---
 
-## What is Claude STT?
+## Features
 
-Claude STT gives you voice input directly into Claude Code. No typing required — just speak naturally.
+| | Feature | Details |
+|---|---------|---------|
+| 🎙️ | **Native Menu Bar App** | Always-on macOS status bar control with popover UI |
+| 🔒 | **100% Local** | MLX Whisper runs on Apple Silicon GPU — no cloud, no API keys |
+| ⚡ | **Fast** | ~2-3s transcription (medium model) on M-series chips |
+| 🇩🇪 | **14 Languages** | German, English, French, Spanish, and 10 more |
+| ⌨️ | **Push-to-Talk** | Hold right CMD (or any configurable hotkey), speak, release |
+| 🎛️ | **Settings UI** | Native SwiftUI settings with hotkey recorder, engine picker, vocabulary editor |
+| 🔊 | **Sound Feedback** | Audio cues for recording start/stop |
+| 📝 | **Custom Vocabulary** | Add domain-specific terms to improve recognition accuracy |
 
-| What You Get | Why It Matters |
-|--------------|----------------|
-| **Local processing** | All audio processed on-device using Moonshine STT |
-| **Low latency** | ~400ms transcription time |
-| **Push-to-talk** | Hold hotkey to record, release to transcribe |
-| **Cross-platform** | macOS, Linux, Windows |
-| **Privacy first** | No audio or text sent to external services |
+---
 
-### How It Works
+## Download
 
+Download the latest release from the [Releases page](https://github.com/Advisior/local-stt/releases).
+
+Or build from source (see [Development](#development) below).
+
+---
+
+## Quick Start
+
+### 1. Install Python dependencies
+
+```bash
+git clone https://github.com/Advisior/local-stt.git
+cd local-stt
+
+python3.12 -m venv .venv    # Python 3.11, 3.12, or 3.13
+source .venv/bin/activate
+
+pip install -e .
+pip install mlx-whisper
 ```
-Press Ctrl+Shift+Space → start recording
-        ↓
-Audio captured from microphone
-        ↓
-Press Ctrl+Shift+Space → stop recording
-        ↓
-Moonshine STT processes locally (~400ms)
-        ↓
-Text inserted into Claude Code input
+
+### 2. Configure
+
+```bash
+mkdir -p ~/.claude/plugins/claude-stt
+
+cat > ~/.claude/plugins/claude-stt/config.toml << 'EOF'
+[claude-stt]
+hotkey = "cmd_r"
+mode = "push-to-talk"
+engine = "mlx"
+whisper_model = "medium"
+sample_rate = 16000
+max_recording_seconds = 300
+output_mode = "auto"
+sound_effects = true
+language = "de"
+initial_prompt = "TypeScript, React, Node.js, PostgreSQL, Docker, Kubernetes, GitHub Actions, REST API, GraphQL, WebSocket"
+EOF
 ```
 
-**Key details:**
-- Audio is processed in memory and immediately discarded
-- Uses Moonshine ONNX for fast local inference
-- Keyboard injection or clipboard fallback
-- Native system sounds for audio feedback
+### 3. Build and install the menu bar app
+
+```bash
+bash scripts/build-app.sh
+bash scripts/install-app.sh
+```
+
+### 4. Start
+
+Launch **Local-STT** from `/Applications` or start the daemon via CLI:
+
+```bash
+claude-stt start
+```
+
+Grant microphone access when macOS prompts you.
+
+---
+
+## Menu Bar App
+
+The menu bar app lives in your status bar and provides quick access to all controls:
+
+- **Status indicator** — green dot when running, red when stopped
+- **Start/Stop** daemon with one click
+- **Toggle Recording** (or use your hotkey)
+- **Settings** — full configuration UI
+- **Open Log** — quick access to daemon logs
+
+### Settings
+
+Three tabs for full control:
+
+**General** — Hotkey recorder (click and press your key), recording mode (push-to-talk vs toggle), engine selection (MLX Whisper, Whisper, Moonshine), model size
+
+**Transcription** — Language selection with country flags, custom vocabulary editor with character counter
+
+**About** — Daemon status, version info, project links
+
+---
+
+## Engines
+
+| Engine | Best for | Speed | Models |
+|--------|----------|-------|--------|
+| **MLX Whisper** (recommended) | Apple Silicon Macs | ~2-3s (medium) | tiny, base, small, **medium**, large, large-v3, large-v3-turbo |
+| **Whisper** | CPU-based fallback | ~5-8s (medium) | Same as MLX |
+| **Moonshine** | Fastest, English-only | ~0.4s | tiny, base |
+
+MLX Whisper uses 4-bit quantized models optimized for M-series chips. The medium model (~1.5 GB, downloaded once) is the best balance of speed and accuracy for German.
 
 ---
 
 ## Configuration
 
-Customize your settings anytime:
+Settings are stored in `~/.claude/plugins/claude-stt/config.toml` and can be edited via the Settings UI or directly.
 
+| Option | Default | Description |
+|--------|---------|-------------|
+| `hotkey` | `cmd_r` | Recording trigger key. Side-specific: `cmd_r`, `cmd_l`, `shift_l`, `alt_r`, etc. |
+| `mode` | `push-to-talk` | `push-to-talk` (hold to record) or `toggle` (press to start/stop) |
+| `engine` | `mlx` | STT engine: `mlx`, `whisper`, `moonshine` |
+| `whisper_model` | `medium` | Model size: `tiny`, `base`, `small`, `medium`, `large`, `large-v3`, `large-v3-turbo` |
+| `language` | `de` | Recognition language (2-letter code) or omit for auto-detect |
+| `initial_prompt` | — | Comma-separated vocabulary terms to improve recognition |
+| `sound_effects` | `true` | Audio feedback on recording start/stop |
+| `output_mode` | `auto` | Text insertion: `auto`, `injection` (keyboard), `clipboard` |
+| `max_recording_seconds` | `300` | Maximum recording duration in seconds |
+
+### Custom Vocabulary
+
+The `initial_prompt` tells Whisper which domain-specific terms you use. This dramatically improves recognition of technical words:
+
+```toml
+initial_prompt = "TypeScript, React, Kubernetes, PostgreSQL, GraphQL, WebSocket, CI/CD Pipeline, OAuth, Terraform"
 ```
-/claude-stt:config
+
+Keep it under ~500 characters. Only add terms that Whisper would otherwise misspell.
+
+---
+
+## CLI Commands
+
+```bash
+claude-stt start     # Start the STT daemon
+claude-stt stop      # Stop the daemon
+claude-stt status    # Show daemon status
+claude-stt setup     # First-time setup wizard
+claude-stt menubar   # Launch the menu bar app
 ```
-
-### Options
-
-| Option | Values | Default | Description |
-|--------|--------|---------|-------------|
-| `hotkey` | Key combo | `ctrl+shift+space` | Trigger recording |
-| `mode` | `toggle`, `push-to-talk` | `toggle` | Press to toggle vs hold to record |
-| `engine` | `moonshine`, `whisper` | `moonshine` | STT engine |
-| `moonshine_model` | `moonshine/tiny`, `moonshine/base`, other Moonshine model IDs | `moonshine/base` | Model size |
-| `output_mode` | `auto`, `injection`, `clipboard` | `auto` | How text is inserted |
-| `sound_effects` | `true`, `false` | `true` | Play audio feedback |
-| `max_recording_seconds` | 1-600 | 300 | Maximum recording duration |
-
-Settings stored in `~/.claude/plugins/claude-stt/config.toml`.
 
 ---
 
 ## Requirements
 
+- macOS with **Apple Silicon** (M1/M2/M3/M4/M5)
 - **Python 3.11-3.13**
-- **~200MB disk space** for STT model
-- **Microphone access**
+- ~1.5 GB disk for the Whisper medium model (downloaded once)
 
-### Platform-Specific
+### Required Permissions
 
-| Platform | Additional Requirements |
-|----------|------------------------|
-| **macOS** | Accessibility permissions (System Settings > Privacy & Security) |
-| **Linux** | xdotool for window management; X11 recommended (Wayland has limitations); WSL not supported |
-| **Windows** | pywin32 for window tracking |
+Local-STT needs three macOS permissions to function. The app requests them automatically on first start — you'll see three system dialogs in sequence:
+
+1. **Microphone** — "Local-STT would like to access the microphone." Click **OK** to allow audio capture for speech recognition.
+
+2. **Accessibility** — "Local-STT would like to control this computer using accessibility features." Click **Open System Settings**, then enable the toggle for Local-STT. This is required for global hotkey detection.
+
+3. **System Events / Automation** — "Local-STT wants access to control System Events." Click **OK** to allow text injection into the active window.
+
+| Permission | Why | Where to grant |
+|------------|-----|----------------|
+| **Microphone** | Audio capture for speech recognition | System Settings > Privacy & Security > Microphone |
+| **Accessibility** | Global hotkey detection (pynput) | System Settings > Privacy & Security > Accessibility |
+| **Input Monitoring** | Keyboard event monitoring | System Settings > Privacy & Security > Input Monitoring |
+
+**Important:** After granting Accessibility access, **restart the daemon** (Stop + Start in the menu bar) for the permission to take effect.
+
+> The STT model is downloaded once from HuggingFace (~1.5 GB). After that, all processing is 100% offline — no network requests on subsequent starts.
+
+> **Linux/Windows:** The Python daemon works cross-platform, but the native menu bar app is macOS-only. See the [CLI Commands](#cli-commands) for cross-platform usage.
 
 ---
 
-## Commands
+## Uninstall
 
-| Command | Description |
-|---------|-------------|
-| `/claude-stt:setup` | First-time setup: check environment, install deps, download model |
-| `/claude-stt:start` | Start the STT daemon |
-| `/claude-stt:stop` | Stop the STT daemon |
-| `/claude-stt:status` | Show daemon status and readiness checks |
-| `/claude-stt:config` | Change settings |
-
-You can also use the CLI directly:
-
+```bash
+bash scripts/uninstall-app.sh
 ```
-claude-stt setup
-claude-stt start --background
-```
+
+This removes the app, stops the daemon, and cleans up all macOS permissions (Microphone, Accessibility, Input Monitoring). Config files and the model cache are kept — the script shows how to remove them manually.
 
 ---
 
 ## Troubleshooting
 
-| Issue | Solution |
-|-------|----------|
-| No audio input | Check microphone permissions in system settings |
-| Keyboard injection not working | **macOS**: Grant Accessibility permissions. **Linux**: Ensure xdotool installed |
-| Model not loading | Run `/claude-stt:setup` to download. Check disk space (~200MB) |
-| Hotkey test fails during setup | Fix permissions or rerun `/claude-stt:setup --skip-hotkey-test` to continue setup |
-| Whisper dependencies missing | Run `/claude-stt:setup --with-whisper`, or `uv sync --directory $CLAUDE_PLUGIN_ROOT --extra whisper`, or `python $CLAUDE_PLUGIN_ROOT/scripts/exec.py -m pip install .[whisper]` |
-| Hotkey not triggering | Check for conflicts with other apps. Try `/claude-stt:config` to change hotkey |
-| Text going to wrong window | Plugin tracks original window — ensure Claude Code was focused when recording started |
-| Running under WSL | Not supported; use native Windows or Linux |
+| Problem | Fix |
+|---------|-----|
+| No sound on key press | System Settings > Privacy & Security > Microphone > your terminal app |
+| "No speech detected" (-93 dB) | Check mic input level in System Settings > Sound > Input |
+| Wrong language output | Set `language = "de"` (or your language code) in config |
+| Slow transcription | Switch to `small` model, or ensure no other GPU tasks running |
+| Hotkey doesn't work | Quit other STT tools that capture the same key |
+| Python version error | Use Python 3.11-3.13: `python3.12 -m venv .venv` |
+| "pynput unavailable" | Grant Accessibility: System Settings > Privacy & Security > Accessibility > your terminal |
 
-### Logging
+### Logs
 
-Set `CLAUDE_STT_LOG_LEVEL=DEBUG` to get verbose logs when starting the daemon.
+```bash
+tail -f /tmp/claude-stt.log
+```
 
 ---
 
 ## Privacy
 
-**All processing is local.** All audio processing happens on your device. No data is sent to any server.
+**All processing happens on your device.** No audio, no text, no telemetry is ever sent anywhere.
 
 - Audio captured from your microphone is processed entirely on-device
-- Moonshine runs locally — no cloud API calls
-- Audio is never sent anywhere, never stored (processed in memory, discarded)
-- Transcribed text only goes to Claude Code input or clipboard
-
-**No telemetry or analytics.**
+- MLX Whisper runs locally on your Apple Silicon GPU
+- Audio is processed in memory and immediately discarded
+- Transcribed text only goes to the active window or clipboard
+- No telemetry, no analytics, no tracking
 
 ---
 
@@ -165,21 +244,22 @@ Set `CLAUDE_STT_LOG_LEVEL=DEBUG` to get verbose logs when starting the daemon.
 git clone https://github.com/Advisior/local-stt.git
 cd local-stt
 
-# Install dependencies (uv preferred, falls back to local venv)
-python scripts/setup.py --dev --skip-audio-test --skip-model-download --no-start
+# Python daemon
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
 
-# Test locally without installing
-claude --plugin-dir /path/to/claude-stt
+# Run tests
+python -m unittest discover -s tests
+
+# Lint
+ruff check src/
+
+# Build menu bar app
+bash scripts/build-app.sh
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-### Release Checklist
-
-- Bump versions in `pyproject.toml`, `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`
-- Update `CHANGELOG.md`
-- Run tests: `uv run python -m unittest discover -s tests`
-- Verify onboarding in Claude Code (`/plugin install`, `/claude-stt:setup`)
 
 ---
 
@@ -197,7 +277,7 @@ To report a security vulnerability, please see [SECURITY.md](SECURITY.md). Do no
 
 ## Acknowledgments
 
-Originally created by [Jarrod Watts](https://github.com/jarrodwatts). Fork maintained by [Advisior GmbH](https://www.advisior.de).
+Originally created by [Jarrod Watts](https://github.com/jarrodwatts). Fork maintained and extended by [Advisior GmbH](https://www.advisior.de).
 
 ---
 

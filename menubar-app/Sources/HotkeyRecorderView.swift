@@ -103,6 +103,10 @@ struct HotkeyField: NSViewRepresentable {
             self.parent = parent
         }
 
+        deinit {
+            stopRecording()
+        }
+
         func startRecording() {
             parent.isRecording = true
 
@@ -269,6 +273,11 @@ class HotkeyNSTextField: NSTextField {
 
     override func keyDown(with event: NSEvent) {
         // Swallow - handled by monitor
+    }
+
+    override func resignFirstResponder() -> Bool {
+        coordinator?.stopRecording()
+        return super.resignFirstResponder()
     }
 }
 

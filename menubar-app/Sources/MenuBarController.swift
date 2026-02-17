@@ -22,6 +22,14 @@ class MenuBarController: NSObject {
                 self?.applyIcon(running: running)
             }
             .store(in: &cancellables)
+
+        // Auto-start daemon if enabled in config (no permission prompts)
+        if config.autoStartDaemon && !daemon.isRunning {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                guard let self = self, !self.daemon.isRunning else { return }
+                self.daemon.startDaemon(promptForPermissions: false)
+            }
+        }
     }
 
     // MARK: - Setup
@@ -83,8 +91,7 @@ class MenuBarController: NSObject {
         if popover.isShown {
             closePopover()
         } else {
-            // Refresh popover content
-            setupPopover()
+            config.load()
             popover.show(
                 relativeTo: button.bounds,
                 of: button,
@@ -153,14 +160,9 @@ class MenuBarController: NSObject {
     }
 
     private func onOpenLog() {
-        let logFile = ConfigManager.configDir
-            .appendingPathComponent("daemon.log")
+        let logFile = URL(fileURLWithPath: "/tmp/claude-stt.log")
         if FileManager.default.fileExists(atPath: logFile.path) {
-            NSWorkspace.shared.open(
-                [logFile],
-                withApplicationAt: URL(fileURLWithPath: "/System/Applications/Utilities/Console.app"),
-                configuration: NSWorkspace.OpenConfiguration()
-            )
+            NSWorkspace.shared.open(logFile)
         }
     }
 

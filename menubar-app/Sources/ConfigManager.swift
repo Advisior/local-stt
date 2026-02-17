@@ -8,6 +8,7 @@ class ConfigManager: ObservableObject {
     @Published var language: String = ""
     @Published var initialPrompt: String = ""
     @Published var soundEffects: Bool = true
+    @Published var autoStartDaemon: Bool = true
 
     // Read-only display
     @Published var engine: String = "moonshine"
@@ -24,6 +25,42 @@ class ConfigManager: ObservableObject {
 
     private var configURL: URL {
         Self.configDir.appendingPathComponent("config.toml")
+    }
+
+    /// Human-readable hotkey label for display in menus (e.g. "⌘R", "F1", "⌃⇧Space")
+    var hotkeyLabel: String {
+        let parts = hotkey.split(separator: "+").map(String.init)
+        var symbols: [String] = []
+
+        for part in parts {
+            let lower = part.lowercased().trimmingCharacters(in: .whitespaces)
+            switch lower {
+            // Side-specific keys used as standalone hotkeys (e.g. "cmd_r" = right ⌘)
+            case "cmd_r": symbols.append("\u{2318}R")
+            case "cmd_l": symbols.append("\u{2318}L")
+            case "ctrl_r": symbols.append("\u{2303}R")
+            case "ctrl_l": symbols.append("\u{2303}L")
+            case "alt_r": symbols.append("\u{2325}R")
+            case "alt_l": symbols.append("\u{2325}L")
+            case "shift_r": symbols.append("\u{21E7}R")
+            case "shift_l": symbols.append("\u{21E7}L")
+            // Generic modifiers (used in combos like ctrl+shift+space)
+            case "ctrl": symbols.append("\u{2303}")
+            case "alt", "option": symbols.append("\u{2325}")
+            case "shift": symbols.append("\u{21E7}")
+            case "cmd", "command": symbols.append("\u{2318}")
+            case "space": symbols.append("Space")
+            default:
+                // F-keys, single letters, etc.
+                if lower.hasPrefix("f") && lower.count <= 3 && Int(lower.dropFirst()) != nil {
+                    symbols.append(part.uppercased())
+                } else {
+                    symbols.append(part.capitalized)
+                }
+            }
+        }
+
+        return symbols.joined()
     }
 
     var engineLabel: String {
@@ -67,6 +104,7 @@ class ConfigManager: ObservableObject {
             case "language": language = value
             case "initial_prompt": initialPrompt = value
             case "sound_effects": soundEffects = (value == "true")
+            case "auto_start_daemon": autoStartDaemon = (value == "true")
             default: break
             }
         }
@@ -142,6 +180,7 @@ class ConfigManager: ObservableObject {
         lines.append("max_recording_seconds = 300")
         lines.append("output_mode = \"auto\"")
         lines.append("sound_effects = \(soundEffects)")
+        lines.append("auto_start_daemon = \(autoStartDaemon)")
 
         if !language.isEmpty {
             lines.append("language = \"\(escape(language))\"")

@@ -44,12 +44,32 @@ language = "de"
 initial_prompt = "TypeScript, React, Node.js, PostgreSQL, Docker, Kubernetes, GitHub Actions, REST API, GraphQL, WebSocket, Microservices, CI/CD Pipeline"
 EOF
 
-# 6. Grant microphone access
-# macOS will prompt on first run - click "Allow"
+# 6. Grant permissions (macOS will prompt on first run)
+# Required: Microphone, Accessibility, Input Monitoring
+# Click "Allow" on each dialog. After granting Accessibility,
+# restart the daemon for it to take effect.
 
 # 7. Start
 claude-stt start
 ```
+
+## Required macOS Permissions
+
+Local-STT needs three permissions to work. On first start, you'll see three system dialogs in sequence:
+
+1. **Microphone** — "Local-STT would like to access the microphone." Click **OK**.
+2. **Accessibility** — "Local-STT would like to control this computer using accessibility features." Click **Open System Settings**, then enable the toggle for Local-STT.
+3. **System Events / Automation** — "Local-STT wants access to control System Events." Click **OK**.
+
+| Permission | Purpose | Grant at |
+|------------|---------|----------|
+| **Microphone** | Audio capture | System Settings > Privacy & Security > Microphone |
+| **Accessibility** | Hotkey detection (pynput) | System Settings > Privacy & Security > Accessibility |
+| **Input Monitoring** | Keyboard monitoring | System Settings > Privacy & Security > Input Monitoring |
+
+**After granting Accessibility access, restart the daemon** (Stop + Start in the menu bar, or `claude-stt stop && claude-stt start`).
+
+The STT model (~1.5 GB) is downloaded once on first use. After that, everything runs 100% offline.
 
 ## Customizing Your Vocabulary
 
@@ -172,6 +192,14 @@ EOF
 
 launchctl load ~/Library/LaunchAgents/com.claude-stt.daemon.plist
 ```
+
+## Uninstall
+
+```bash
+bash scripts/uninstall-app.sh
+```
+
+Removes the app, stops the daemon, and cleans up all macOS permissions. Config and model data are kept — the script shows optional cleanup commands.
 
 ## Troubleshooting
 

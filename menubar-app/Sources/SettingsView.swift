@@ -1,3 +1,4 @@
+import ServiceManagement
 import SwiftUI
 
 struct SettingsView: View {
@@ -70,9 +71,21 @@ struct SettingsView: View {
 
 private struct GeneralTab: View {
     @ObservedObject var config: ConfigManager
+    @State private var launchAtLogin: Bool = false
 
     var body: some View {
         Form {
+            Section {
+                Toggle("Start daemon when app opens", isOn: $config.autoStartDaemon)
+
+                Toggle("Launch at Login", isOn: $launchAtLogin)
+                    .onChange(of: launchAtLogin) { newValue in
+                        setLaunchAtLogin(newValue)
+                    }
+            } header: {
+                Label("Startup", systemImage: "power")
+            }
+
             Section {
                 VStack(alignment: .leading, spacing: 4) {
                     LabeledContent("Hotkey") {
@@ -157,6 +170,23 @@ private struct GeneralTab: View {
             }
         }
         .formStyle(.grouped)
+        .onAppear {
+            launchAtLogin = SMAppService.mainApp.status == .enabled
+        }
+    }
+
+    private func setLaunchAtLogin(_ enabled: Bool) {
+        do {
+            if enabled {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+        } catch {
+            NSLog("Local-STT: Failed to set launch at login: %@", error.localizedDescription)
+            // Revert toggle to actual state
+            launchAtLogin = SMAppService.mainApp.status == .enabled
+        }
     }
 
     private var isAppleSilicon: Bool {
@@ -258,9 +288,11 @@ private struct AboutTab: View {
     private let repoURL = "https://github.com/Advisior/local-stt"
     private let advisiorURL = "https://www.advisior.de"
     private let linkedInURL = "https://www.linkedin.com/in/uwe-franke/"
+    private let originalAuthorURL = "https://github.com/jarrodwatts"
+    private let semanticAnchorsURL = "https://github.com/LLM-Coding/Semantic-Anchors"
 
     var body: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 12) {
             Spacer()
 
             // App icon
@@ -296,15 +328,13 @@ private struct AboutTab: View {
             .frame(maxWidth: 320)
 
             // Links
-            VStack(spacing: 8) {
-                // GitHub
+            VStack(spacing: 6) {
                 linkButton(
                     icon: "link",
                     text: "GitHub Repository",
                     url: repoURL
                 )
 
-                // LinkedIn
                 linkButton(
                     icon: "person.circle",
                     text: "Uwe Franke \u{2014} LinkedIn",
@@ -314,28 +344,45 @@ private struct AboutTab: View {
 
             Spacer()
 
-            // Made with love footer
-            HStack(spacing: 4) {
-                Text("Made with")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                Image(systemName: "heart.fill")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.red)
-                Text("by")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-
-                Button {
-                    if let url = URL(string: advisiorURL) {
-                        NSWorkspace.shared.open(url)
-                    }
-                } label: {
-                    AdvisiorLogoView()
+            // Credits
+            VStack(spacing: 4) {
+                HStack(spacing: 4) {
+                    Text("Originally created by")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                    creditLink("Jarrod Watts", url: originalAuthorURL)
                 }
-                .buttonStyle(.plain)
-                .onHover { hovering in
-                    if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+
+                HStack(spacing: 4) {
+                    creditLink("Semantic Anchors", url: semanticAnchorsURL)
+                    Text("by Ralf M\u{00FC}ller")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                }
+
+                // Made with love footer
+                HStack(spacing: 4) {
+                    Text("Maintained with")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                    Image(systemName: "heart.fill")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.red)
+                    Text("by")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+
+                    Button {
+                        if let url = URL(string: advisiorURL) {
+                            NSWorkspace.shared.open(url)
+                        }
+                    } label: {
+                        AdvisiorLogoView()
+                    }
+                    .buttonStyle(.plain)
+                    .onHover { hovering in
+                        if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+                    }
                 }
             }
             .padding(.bottom, 8)
@@ -360,6 +407,22 @@ private struct AboutTab: View {
             Spacer()
             Text(value)
                 .font(.system(size: 12, weight: .medium))
+        }
+    }
+
+    private func creditLink(_ text: String, url: String) -> some View {
+        Button {
+            if let u = URL(string: url) {
+                NSWorkspace.shared.open(u)
+            }
+        } label: {
+            Text(text)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.blue.opacity(0.7))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
         }
     }
 
