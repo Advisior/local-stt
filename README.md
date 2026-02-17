@@ -3,7 +3,7 @@
 Speech-to-text input for Claude Code. Hold a hotkey, speak, and your words appear in the input field — all processed locally.
 
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
-![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)
+![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue.svg)
 ![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)
 
 ![Claude STT in action](preview.png)
@@ -94,7 +94,7 @@ Settings stored in `~/.claude/plugins/claude-stt/config.toml`.
 
 ## Requirements
 
-- **Python 3.10-3.13**
+- **Python 3.11-3.13**
 - **~200MB disk space** for STT model
 - **Microphone access**
 

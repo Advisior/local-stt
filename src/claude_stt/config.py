@@ -134,22 +134,26 @@ class Config:
         config_path = self.get_config_path()
         config_path.parent.mkdir(parents=True, exist_ok=True)
 
-        data = {
-            "claude-stt": {
-                "hotkey": self.hotkey,
-                "mode": self.mode,
-                "engine": self.engine,
-                "moonshine_model": self.moonshine_model,
-                "whisper_model": self.whisper_model,
-                "sample_rate": self.sample_rate,
-                "max_recording_seconds": self.max_recording_seconds,
-                "audio_device": self.audio_device,
-                "output_mode": self.output_mode,
-                "sound_effects": self.sound_effects,
-                **({"language": self.language} if self.language else {}),
-                **({"initial_prompt": self.initial_prompt} if self.initial_prompt else {}),
-            }
+        section = {
+            "hotkey": self.hotkey,
+            "mode": self.mode,
+            "engine": self.engine,
+            "moonshine_model": self.moonshine_model,
+            "whisper_model": self.whisper_model,
+            "sample_rate": self.sample_rate,
+            "max_recording_seconds": self.max_recording_seconds,
+            "output_mode": self.output_mode,
+            "sound_effects": self.sound_effects,
         }
+        # Only include optional fields when they have values (TOML cannot serialize None)
+        if self.audio_device is not None:
+            section["audio_device"] = self.audio_device
+        if self.language:
+            section["language"] = self.language
+        if self.initial_prompt:
+            section["initial_prompt"] = self.initial_prompt
+
+        data = {"claude-stt": section}
 
         temp_file = None
         try:

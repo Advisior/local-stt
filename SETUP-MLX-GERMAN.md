@@ -7,7 +7,7 @@ Free, local, private speech-to-text for Claude Code on Apple Silicon. No cloud, 
 ## Requirements
 
 - macOS with Apple Silicon (M1/M2/M3/M4/M5)
-- Python 3.10-3.13 (not 3.14+)
+- Python 3.11-3.13 (not 3.14+)
 - ~1.5 GB disk for the Whisper medium model (downloaded once)
 - Microphone access granted to your terminal app
 
@@ -19,7 +19,7 @@ git clone https://github.com/Advisior/local-stt.git
 cd local-stt
 
 # 2. Create venv with compatible Python
-python3.12 -m venv .venv   # or python3.11, python3.13
+python3.12 -m venv .venv   # or python3.11, python3.12, python3.13
 source .venv/bin/activate
 
 # 3. Install with MLX support
@@ -182,7 +182,7 @@ launchctl load ~/Library/LaunchAgents/com.claude-stt.daemon.plist
 | Wrong language output | Add `language = "de"` (or your language code) to config |
 | Slow transcription | Switch to `small` model, or ensure no other heavy GPU tasks running |
 | Hotkey doesn't work | Quit Wispr Flow or other STT tools that capture the same key |
-| Python 3.14 error | Use Python 3.12: `python3.12 -m venv .venv` |
+| Python version error | Use Python 3.11-3.13: `python3.12 -m venv .venv` |
 | "pynput unavailable" | Grant Accessibility access: System Settings > Privacy & Security > Accessibility > your terminal |
 
 ## Logs
