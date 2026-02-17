@@ -11,4 +11,4 @@ Please email security issues to security@advisior.de with:
 - Steps to reproduce
 - Any relevant logs or proof of concept
 
-We will acknowledge receipt within 72 hours and coordinate a fix.
+We will acknowledge receipt and coordinate a fix. Note that this is an open-source project maintained in our spare time — there is no guaranteed response time.

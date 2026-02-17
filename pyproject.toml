@@ -1,7 +1,7 @@
 [project]
-name = "claude-stt"
+name = "local-stt"
 version = "0.2.0"
-description = "Speech-to-text input for Claude Code with live streaming dictation"
+description = "Free, local, private speech-to-text for macOS. No cloud, no API costs."
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
 license = "MIT"
@@ -34,7 +34,8 @@ Issues = "https://github.com/Advisior/local-stt/issues"
 Changelog = "https://github.com/Advisior/local-stt/blob/main/CHANGELOG.md"
 
 [project.scripts]
-claude-stt = "claude_stt.cli:main"
+local-stt = "claude_stt.cli:main"
+claude-stt = "claude_stt.cli:main"  # backward compatibility
 
 [build-system]
 requires = ["hatchling"]

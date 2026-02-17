@@ -9,9 +9,9 @@
 #show raw.where(block: true): block.with(fill: luma(245), inset: 8pt, radius: 4pt, width: 100%)
 #show raw.where(block: false): box.with(fill: luma(240), inset: (x: 3pt, y: 0pt), outset: (y: 3pt), radius: 2pt)
 
-= Claude STT -- Local Voice Input for Claude Code
+= Local-STT -- Lokale Spracheingabe fuer macOS
 
-Free, local, private speech-to-text for Claude Code on Apple Silicon. \
+Free, local, private speech-to-text for macOS on Apple Silicon. \
 No cloud, no API costs, no data leaves your Mac.
 
 *What you get:* Hold right CMD key, speak German (or any language), release -- text appears at your cursor. Works in any app.
@@ -27,8 +27,8 @@ No cloud, no API costs, no data leaves your Mac.
 
 ```bash
 # 1. Clone
-git clone https://github.com/jarrodwatts/claude-stt.git
-cd claude-stt
+git clone https://github.com/Advisior/local-stt.git
+cd local-stt
 
 # 2. Create venv with compatible Python
 python3.12 -m venv .venv   # or python3.11, python3.13
@@ -39,10 +39,10 @@ pip install -e .
 pip install mlx-whisper
 
 # 4. Create config directory
-mkdir -p ~/.claude/plugins/claude-stt
+mkdir -p ~/.config/local-stt
 
 # 5. Write config (see next section for customization)
-cat > ~/.claude/plugins/claude-stt/config.toml << 'EOF'
+cat > ~/.config/local-stt/config.toml << 'EOF'
 [claude-stt]
 hotkey = "cmd_r"
 mode = "push-to-talk"
@@ -60,14 +60,14 @@ EOF
 # macOS will prompt on first run - click "Allow"
 
 # 7. Start
-claude-stt start
+local-stt start
 ```
 
 == Customizing Your Vocabulary
 
 The `initial_prompt` tells Whisper which domain-specific terms you use. This dramatically improves recognition of technical words.
 
-Edit `~/.claude/plugins/claude-stt/config.toml` and replace the `initial_prompt` with your own terms:
+Edit `~/.config/local-stt/config.toml` and replace the `initial_prompt` with your own terms:
 
 === Examples by Domain
 
@@ -156,13 +156,13 @@ MLX automatically uses 4-bit quantized models for faster inference.
 
 ```bash
 # Start daemon (runs in background)
-claude-stt start
+local-stt start
 
 # Check status
-claude-stt status
+local-stt status
 
 # Stop daemon
-claude-stt stop
+local-stt stop
 ```
 
 === Auto-Start on Login

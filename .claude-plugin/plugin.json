@@ -1,6 +1,6 @@
 {
   "name": "local-stt",
-  "description": "Speech-to-text input for Claude Code with live streaming dictation",
+  "description": "Free, local, private speech-to-text for macOS with native menu bar app",
   "version": "0.2.0",
   "author": {
     "name": "Advisior GmbH",

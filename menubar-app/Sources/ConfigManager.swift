@@ -16,11 +16,19 @@ class ConfigManager: ObservableObject {
     @Published var moonshineModel: String = "moonshine/base"
 
     static var configDir: URL {
-        if let override = ProcessInfo.processInfo.environment["CLAUDE_STT_CONFIG_DIR"] {
+        if let override = ProcessInfo.processInfo.environment["LOCAL_STT_CONFIG_DIR"]
+            ?? ProcessInfo.processInfo.environment["CLAUDE_STT_CONFIG_DIR"] {
             return URL(fileURLWithPath: override)
         }
-        return FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude/plugins/claude-stt")
+        let fm = FileManager.default
+        let home = fm.homeDirectoryForCurrentUser
+        let newDir = home.appendingPathComponent(".config/local-stt")
+        let legacyDir = home.appendingPathComponent(".claude/plugins/claude-stt")
+        // Migrate transparently: use legacy dir if it exists and new dir doesn't
+        if !fm.fileExists(atPath: newDir.path) && fm.fileExists(atPath: legacyDir.path) {
+            return legacyDir
+        }
+        return newDir
     }
 
     private var configURL: URL {

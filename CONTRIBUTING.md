@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for contributing to Claude STT. This repo is small and fast-moving, so we optimize for clarity and quick review.
+Thanks for contributing to Local-STT. This repo is small and fast-moving, so we optimize for clarity and quick review.
 
 ## How to Contribute
 
@@ -17,20 +17,21 @@ Thanks for contributing to Claude STT. This repo is small and fast-moving, so we
 git clone https://github.com/Advisior/local-stt.git
 cd local-stt
 
-# Install dependencies (uv preferred)
-uv sync --python 3.12 --extra dev
+# Install dependencies
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+pip install mlx-whisper
 
-# Or use the bootstrapper (uv optional, falls back to local venv)
-python scripts/setup.py --dev --skip-audio-test --skip-model-download --no-start
-
-# Test locally with Claude Code
-claude --plugin-dir .
+# Build and install the menu bar app
+bash scripts/build-app.sh
+bash scripts/install-app.sh
 ```
 
 ## Tests
 
 ```bash
-uv run python -m unittest discover -s tests
+python -m unittest discover -s tests
 ```
 
 ## Code Style
@@ -62,21 +63,17 @@ Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 
 When shipping a new version:
 
-1. **Update version numbers** in all three files:
+1. **Update version numbers** in all files:
    - `pyproject.toml` → `version = "X.Y.Z"`
+   - `src/claude_stt/__init__.py` → `__version__ = "X.Y.Z"`
    - `.claude-plugin/plugin.json` → `"version": "X.Y.Z"`
    - `.claude-plugin/marketplace.json` → `"version": "X.Y.Z"`
 
-2. **Commit and push** to main branch
+2. **Update CHANGELOG.md** with the new version and changes
 
-### How Users Get Updates
+3. **Build the app:** `bash scripts/build-app.sh`
 
-Claude Code plugins support updates through the `/plugin` interface:
-
-- **Update now** — Fetches latest from main branch, installs immediately
-- **Mark for update** — Stages update for later
-
-Claude Code compares the `version` field in `plugin.json` against the installed version.
+4. **Create a GitHub Release** with the built ZIP from `dist/`
 
 ### Version Strategy
 

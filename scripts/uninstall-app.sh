@@ -5,12 +5,16 @@ set -euo pipefail
 APP_NAME="Local-STT"
 BUNDLE_ID="com.local-stt.menubar"
 APP_PATH="/Applications/${APP_NAME}.app"
-CONFIG_DIR="$HOME/.claude/plugins/claude-stt"
+CONFIG_DIR="$HOME/.config/local-stt"
+LEGACY_CONFIG_DIR="$HOME/.claude/plugins/claude-stt"
 
 echo "Uninstalling ${APP_NAME}..."
 
 # 1. Stop daemon if running
-if command -v claude-stt &>/dev/null; then
+if command -v local-stt &>/dev/null; then
+    echo "Stopping daemon..."
+    local-stt stop 2>/dev/null || true
+elif command -v claude-stt &>/dev/null; then
     echo "Stopping daemon..."
     claude-stt stop 2>/dev/null || true
 fi
@@ -46,7 +50,7 @@ fi
 echo ""
 echo "App removed. Optional cleanup:"
 echo ""
-echo "  Remove config:     rm -rf ${CONFIG_DIR}"
+echo "  Remove config:     rm -rf ${CONFIG_DIR} ${LEGACY_CONFIG_DIR}"
 echo "  Remove venv:       rm -rf $(dirname "$0")/../.venv"
 echo "  Remove MLX models: rm -rf ~/.cache/huggingface/hub/models--mlx-community--whisper-*"
 echo ""

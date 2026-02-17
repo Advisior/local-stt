@@ -8,7 +8,7 @@
     {
       "name": "local-stt",
       "source": "./",
-      "description": "Speech-to-text input for Claude Code with live streaming dictation. Hold a hotkey, speak, and your words appear in the input field.",
+      "description": "Free, local, private speech-to-text for macOS. Hold a hotkey, speak, and your words appear at your cursor. Works in any app.",
       "version": "0.2.0",
       "author": {
         "name": "Advisior GmbH",

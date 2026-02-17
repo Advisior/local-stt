@@ -30,65 +30,43 @@ Free, local, private speech-to-text for your Mac. No cloud, no API costs, no dat
 
 ---
 
-## Download
+## Download & Install
 
-Download the latest release from the [Releases page](https://github.com/Advisior/local-stt/releases).
+### Option A: Download (recommended)
 
-Or build from source (see [Development](#development) below).
+1. Download `Local-STT-v*.zip` from the [Releases page](https://github.com/Advisior/local-stt/releases)
+2. Unzip and drag **Local-STT.app** to `/Applications`
+3. Launch from Applications
 
----
+**Note:** On first launch, macOS may show "app from an unidentified developer". Right-click the app > Open > Open to bypass Gatekeeper.
 
-## Quick Start
-
-### 1. Install Python dependencies
+### Option B: Build from source
 
 ```bash
 git clone https://github.com/Advisior/local-stt.git
 cd local-stt
 
+# Python backend
 python3.12 -m venv .venv    # Python 3.11, 3.12, or 3.13
 source .venv/bin/activate
-
 pip install -e .
 pip install mlx-whisper
-```
 
-### 2. Configure
-
-```bash
-mkdir -p ~/.claude/plugins/claude-stt
-
-cat > ~/.claude/plugins/claude-stt/config.toml << 'EOF'
-[claude-stt]
-hotkey = "cmd_r"
-mode = "push-to-talk"
-engine = "mlx"
-whisper_model = "medium"
-sample_rate = 16000
-max_recording_seconds = 300
-output_mode = "auto"
-sound_effects = true
-language = "de"
-initial_prompt = "TypeScript, React, Node.js, PostgreSQL, Docker, Kubernetes, GitHub Actions, REST API, GraphQL, WebSocket"
-EOF
-```
-
-### 3. Build and install the menu bar app
-
-```bash
+# Build and install menu bar app
 bash scripts/build-app.sh
 bash scripts/install-app.sh
 ```
 
-### 4. Start
+---
 
-Launch **Local-STT** from `/Applications` or start the daemon via CLI:
+## Getting Started
 
-```bash
-claude-stt start
-```
+1. **Launch** Local-STT from `/Applications`
+2. **Grant permissions** when macOS prompts you (see [Permissions](#required-permissions) below)
+3. **Open Settings** (click the menu bar icon > Settings) to configure your hotkey, language, and vocabulary
+4. **Hold your hotkey** (default: right CMD), speak, release — text appears at your cursor
 
-Grant microphone access when macOS prompts you.
+The STT model (~1.5 GB) is downloaded once on first use. After that, everything runs 100% offline.
 
 ---
 
@@ -96,7 +74,7 @@ Grant microphone access when macOS prompts you.
 
 The menu bar app lives in your status bar and provides quick access to all controls:
 
-- **Status indicator** — green dot when running, red when stopped
+- **Status indicator** — mic icon when running, slashed mic when stopped
 - **Start/Stop** daemon with one click
 - **Toggle Recording** (or use your hotkey)
 - **Settings** — full configuration UI
@@ -106,7 +84,7 @@ The menu bar app lives in your status bar and provides quick access to all contr
 
 Three tabs for full control:
 
-**General** — Hotkey recorder (click and press your key), recording mode (push-to-talk vs toggle), engine selection (MLX Whisper, Whisper, Moonshine), model size
+**General** — Hotkey recorder (click and press your key), recording mode (push-to-talk vs toggle), engine selection (MLX Whisper, Whisper, Moonshine), model size, auto-start options
 
 **Transcription** — Language selection with country flags, custom vocabulary editor with character counter
 
@@ -128,7 +106,9 @@ MLX Whisper uses 4-bit quantized models optimized for M-series chips. The medium
 
 ## Configuration
 
-Settings are stored in `~/.claude/plugins/claude-stt/config.toml` and can be edited via the Settings UI or directly.
+All settings are managed through the **Settings UI** in the menu bar app. Changes are saved automatically.
+
+For advanced users, the config file is at `~/.config/local-stt/config.toml` and can be edited directly.
 
 | Option | Default | Description |
 |--------|---------|-------------|
@@ -151,18 +131,6 @@ initial_prompt = "TypeScript, React, Kubernetes, PostgreSQL, GraphQL, WebSocket,
 ```
 
 Keep it under ~500 characters. Only add terms that Whisper would otherwise misspell.
-
----
-
-## CLI Commands
-
-```bash
-claude-stt start     # Start the STT daemon
-claude-stt stop      # Stop the daemon
-claude-stt status    # Show daemon status
-claude-stt setup     # First-time setup wizard
-claude-stt menubar   # Launch the menu bar app
-```
 
 ---
 
@@ -190,9 +158,7 @@ Local-STT needs three macOS permissions to function. The app requests them autom
 
 **Important:** After granting Accessibility access, **restart the daemon** (Stop + Start in the menu bar) for the permission to take effect.
 
-> The STT model is downloaded once from HuggingFace (~1.5 GB). After that, all processing is 100% offline — no network requests on subsequent starts.
-
-> **Linux/Windows:** The Python daemon works cross-platform, but the native menu bar app is macOS-only. See the [CLI Commands](#cli-commands) for cross-platform usage.
+> **Linux/Windows:** The Python daemon works cross-platform, but the native menu bar app is macOS-only. See the [Advanced CLI](#advanced-cli) section for cross-platform usage.
 
 ---
 
@@ -212,8 +178,8 @@ This removes the app, stops the daemon, and cleans up all macOS permissions (Mic
 |---------|-----|
 | No sound on key press | System Settings > Privacy & Security > Microphone > your terminal app |
 | "No speech detected" (-93 dB) | Check mic input level in System Settings > Sound > Input |
-| Wrong language output | Set `language = "de"` (or your language code) in config |
-| Slow transcription | Switch to `small` model, or ensure no other GPU tasks running |
+| Wrong language output | Set language to your language code in Settings > Transcription |
+| Slow transcription | Switch to `small` model in Settings, or ensure no other GPU tasks running |
 | Hotkey doesn't work | Quit other STT tools that capture the same key |
 | Python version error | Use Python 3.11-3.13: `python3.12 -m venv .venv` |
 | "pynput unavailable" | Grant Accessibility: System Settings > Privacy & Security > Accessibility > your terminal |
@@ -235,6 +201,19 @@ tail -f /tmp/claude-stt.log
 - Audio is processed in memory and immediately discarded
 - Transcribed text only goes to the active window or clipboard
 - No telemetry, no analytics, no tracking
+
+---
+
+## Advanced CLI
+
+The Python daemon can also be controlled via the command line. This is useful for Linux/Windows or for scripting.
+
+```bash
+local-stt start     # Start the STT daemon
+local-stt stop      # Stop the daemon
+local-stt status    # Show daemon status
+local-stt setup     # First-time setup wizard
+```
 
 ---
 

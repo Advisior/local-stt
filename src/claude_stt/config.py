@@ -55,10 +55,16 @@ class Config:
     @classmethod
     def get_config_dir(cls) -> Path:
         """Get the configuration directory path."""
-        override = os.environ.get("CLAUDE_STT_CONFIG_DIR")
+        override = os.environ.get("LOCAL_STT_CONFIG_DIR") or os.environ.get("CLAUDE_STT_CONFIG_DIR")
         if override:
             return Path(override).expanduser()
-        return Path.home() / ".claude" / "plugins" / "claude-stt"
+        # New default location
+        new_dir = Path.home() / ".config" / "local-stt"
+        # Legacy location (migrate transparently)
+        legacy_dir = Path.home() / ".claude" / "plugins" / "claude-stt"
+        if not new_dir.exists() and legacy_dir.exists():
+            return legacy_dir
+        return new_dir
 
     @classmethod
     def _legacy_config_path(cls) -> Path | None:

@@ -32,7 +32,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/exec.py -m claude_stt.daemon status
 ### Example Output
 ```
 Daemon is running (PID 12345)
-Config path: /Users/you/.claude/plugins/claude-stt/config.toml
+Config path: /Users/you/.config/local-stt/config.toml
 Hotkey: ctrl+shift+space
 Mode: toggle
 Engine: moonshine
