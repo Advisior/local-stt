@@ -103,7 +103,12 @@ def _get_macos_window() -> Optional[WindowInfo]:
 
 
 def _escape_applescript_string(value: str) -> str:
-    return value.replace("\\", "\\\\").replace('"', '\\"')
+    return (value
+        .replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "")
+        .replace("\r", "")
+    )
 
 
 def _restore_macos_focus(window_info: WindowInfo) -> bool:

@@ -114,12 +114,12 @@ class HotkeyListener:
         except Exception as exc:
             raise HotkeyError(f"Invalid hotkey '{hotkey_str}': {exc}") from exc
 
-        normalized: set = set()
+        normalized_keys: set = set()
         for key in keys:
             normalized_key = self._normalize_key(key)
             if normalized_key is not None:
-                normalized.add(normalized_key)
-        return normalized
+                normalized_keys.add(normalized_key)
+        return normalized_keys
 
     def _normalize_hotkey_string(self, hotkey_str: str) -> str:
         parts = [part.strip() for part in hotkey_str.split("+") if part.strip()]

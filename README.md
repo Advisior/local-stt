@@ -2,8 +2,9 @@
 
 Speech-to-text input for Claude Code. Hold a hotkey, speak, and your words appear in the input field — all processed locally.
 
-[![License](https://img.shields.io/github/license/jarrodwatts/claude-stt)](LICENSE)
-[![Stars](https://img.shields.io/github/stars/jarrodwatts/claude-stt)](https://github.com/jarrodwatts/claude-stt/stargazers)
+![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
+![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)
+![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)
 
 ![Claude STT in action](preview.png)
 
@@ -13,7 +14,7 @@ Inside a Claude Code instance, run the following commands:
 
 **Step 1: Add the marketplace**
 ```
-/plugin marketplace add jarrodwatts/claude-stt
+/plugin marketplace add Advisior/local-stt
 ```
 
 **Step 2: Install the plugin**
@@ -147,7 +148,8 @@ Set `CLAUDE_STT_LOG_LEVEL=DEBUG` to get verbose logs when starting the daemon.
 
 ## Privacy
 
-**All processing is local:**
+**All processing is local.** All audio processing happens on your device. No data is sent to any server.
+
 - Audio captured from your microphone is processed entirely on-device
 - Moonshine runs locally — no cloud API calls
 - Audio is never sent anywhere, never stored (processed in memory, discarded)
@@ -160,8 +162,8 @@ Set `CLAUDE_STT_LOG_LEVEL=DEBUG` to get verbose logs when starting the daemon.
 ## Development
 
 ```bash
-git clone https://github.com/jarrodwatts/claude-stt
-cd claude-stt
+git clone https://github.com/Advisior/local-stt.git
+cd local-stt
 
 # Install dependencies (uv preferred, falls back to local venv)
 python scripts/setup.py --dev --skip-audio-test --skip-model-download --no-start
@@ -181,12 +183,24 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ---
 
-## License
+## Contributing
 
-MIT — see [LICENSE](LICENSE)
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to get started.
 
 ---
 
-## Star History
+## Security
 
-[![Star History Chart](https://api.star-history.com/svg?repos=jarrodwatts/claude-stt&type=Date)](https://star-history.com/#jarrodwatts/claude-stt&Date)
+To report a security vulnerability, please see [SECURITY.md](SECURITY.md). Do not open public issues for security reports.
+
+---
+
+## Acknowledgments
+
+Originally created by [Jarrod Watts](https://github.com/jarrodwatts). Fork maintained by [Advisior GmbH](https://www.advisior.de).
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE)

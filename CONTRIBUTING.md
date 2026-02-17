@@ -14,8 +14,8 @@ Thanks for contributing to Claude STT. This repo is small and fast-moving, so we
 
 ```bash
 # Clone and setup
-git clone https://github.com/jarrodwatts/claude-stt
-cd claude-stt
+git clone https://github.com/Advisior/local-stt.git
+cd local-stt
 
 # Install dependencies (uv preferred)
 uv sync --python 3.12 --extra dev
@@ -40,11 +40,23 @@ uv run python -m unittest discover -s tests
 - Avoid introducing dependencies unless necessary
 - Follow existing patterns in the codebase
 
+## Commit Messages
+
+We follow [Conventional Commits](https://www.conventionalcommits.org/). Examples:
+
+- `feat: add French language support`
+- `fix: resolve hotkey conflict on macOS`
+- `docs: update README badges`
+
 ## Pull Requests
 
 - Describe the problem and the fix
 - Include tests or explain why they are not needed
 - Link issues when relevant
+
+## Code of Conduct
+
+Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Releasing New Versions
 

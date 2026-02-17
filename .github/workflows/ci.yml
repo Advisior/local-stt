@@ -33,6 +33,10 @@ jobs:
           fi
           uv sync --python "${{ matrix.python-version }}" $extra
 
+      - name: Lint with ruff
+        run: |
+          uv run ruff check src/
+
       - name: Run tests
         shell: bash
         run: uv run python -m unittest discover -s tests

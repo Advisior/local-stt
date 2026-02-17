@@ -1,28 +1,29 @@
 {
-  "name": "jarrodwatts-claude-stt",
+  "name": "advisior-local-stt",
   "owner": {
-    "name": "Jarrod Watts",
-    "url": "https://github.com/jarrodwatts"
+    "name": "Advisior GmbH",
+    "url": "https://github.com/Advisior"
   },
   "plugins": [
     {
-      "name": "claude-stt",
+      "name": "local-stt",
       "source": "./",
       "description": "Speech-to-text input for Claude Code with live streaming dictation. Hold a hotkey, speak, and your words appear in the input field.",
       "version": "0.1.0",
       "author": {
-        "name": "Jarrod Watts",
-        "url": "https://github.com/jarrodwatts"
+        "name": "Advisior GmbH",
+        "url": "https://github.com/Advisior"
       },
-      "homepage": "https://github.com/jarrodwatts/claude-stt",
-      "repository": "https://github.com/jarrodwatts/claude-stt",
+      "homepage": "https://github.com/Advisior/local-stt",
+      "repository": "https://github.com/Advisior/local-stt",
       "license": "MIT",
       "keywords": [
         "speech-to-text",
         "stt",
         "voice",
         "dictation",
-        "moonshine",
+        "whisper",
+        "mlx",
         "audio",
         "accessibility"
       ]

@@ -161,6 +161,7 @@ class Config:
                 temp_file = Path(handle.name)
                 tomli_w.dump(data, handle)
             os.replace(temp_file, config_path)
+            self._ensure_secure_permissions()
             return True
         except Exception:
             logger.exception("Failed to save config")
@@ -171,6 +172,19 @@ class Config:
                     temp_file.unlink()
                 except OSError:
                     pass
+
+    @classmethod
+    def _ensure_secure_permissions(cls) -> None:
+        """Enforce secure file permissions on config directory and file."""
+        try:
+            config_dir = cls.get_config_dir()
+            if config_dir.exists():
+                os.chmod(config_dir, 0o700)
+            config_file = cls.get_config_path()
+            if config_file.exists():
+                os.chmod(config_file, 0o600)
+        except OSError:
+            logger.debug("Failed to set secure permissions", exc_info=True)
 
     def validate(self) -> "Config":
         """Validate and normalize configuration values."""

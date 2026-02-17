@@ -82,6 +82,7 @@ def _write_pid_file(pid: int) -> None:
             temp_file = Path(handle.name)
             handle.write(json.dumps(data))
         os.replace(temp_file, pid_file)
+        os.chmod(pid_file, 0o600)
     finally:
         if temp_file and temp_file.exists():
             try:
@@ -148,6 +149,7 @@ def _get_process_command(pid: int) -> Optional[str]:
 
 
 def _get_windows_process_command(pid: int) -> Optional[str]:
+    pid = int(pid)  # Ensure integer to prevent injection
     try:
         result = subprocess.run(
             ["wmic", "process", "where", f"ProcessId={pid}", "get", "CommandLine"],
@@ -246,6 +248,7 @@ def _spawn_background() -> bool:
 
     try:
         with open(log_file, "a", encoding="utf-8") as log_handle:
+            os.chmod(log_file, 0o600)
             subprocess.Popen(
                 cmd,
                 env=env,

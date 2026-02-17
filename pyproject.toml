@@ -8,7 +8,7 @@ license = "MIT"
 authors = [
     { name = "Jarrod Watts", email = "jarrod@jarrodwatts.com" }
 ]
-keywords = ["claude", "speech-to-text", "stt", "voice", "dictation"]
+keywords = ["speech-to-text", "stt", "voice", "dictation", "whisper", "mlx"]
 
 dependencies = [
     "useful-moonshine-onnx",
@@ -23,8 +23,15 @@ dependencies = [
 [project.optional-dependencies]
 whisper = ["faster-whisper>=1.0"]
 macos = ["pyobjc-framework-Cocoa"]
+menubar = ["rumps>=0.4"]
 windows = ["pywin32"]
 dev = ["pytest", "ruff"]
+
+[project.urls]
+Homepage = "https://github.com/Advisior/local-stt"
+Repository = "https://github.com/Advisior/local-stt"
+Issues = "https://github.com/Advisior/local-stt/issues"
+Changelog = "https://github.com/Advisior/local-stt/blob/main/CHANGELOG.md"
 
 [project.scripts]
 claude-stt = "claude_stt.cli:main"

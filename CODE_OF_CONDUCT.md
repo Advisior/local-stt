@@ -27,7 +27,7 @@ when an individual is representing the project or its community.
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to jarrod@jarrodwatts.com. Reports will be reviewed and addressed
+reported to security@advisior.de. Reports will be reviewed and addressed
 promptly and fairly.
 
 Project maintainers have the right and responsibility to remove, edit, or

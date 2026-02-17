@@ -20,7 +20,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "command",
         nargs="?",
-        choices=["setup", "start", "stop", "status", "run", "daemon"],
+        choices=["setup", "start", "stop", "status", "run", "daemon", "menubar"],
         default="daemon",
         help="Command to execute (default: daemon).",
     )
@@ -42,6 +42,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "setup":
         return setup_main(list(args.args))
+
+    if args.command == "menubar":
+        from .menubar import run_menubar
+        run_menubar()
+        return 0
 
     if args.command == "daemon":
         if not args.args:

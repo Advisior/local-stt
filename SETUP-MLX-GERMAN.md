@@ -15,8 +15,8 @@ Free, local, private speech-to-text for Claude Code on Apple Silicon. No cloud, 
 
 ```bash
 # 1. Clone
-git clone https://github.com/jarrodwatts/claude-stt.git
-cd claude-stt
+git clone https://github.com/Advisior/local-stt.git
+cd local-stt
 
 # 2. Create venv with compatible Python
 python3.12 -m venv .venv   # or python3.11, python3.13
@@ -76,7 +76,7 @@ initial_prompt = "Terraform, Ansible, Kubernetes, Helm, ArgoCD, Prometheus, Graf
 
 **Finance / Banking:**
 ```toml
-initial_prompt = "MiFID, DSGVO, KYC, AML, PSD2, SWIFT, SEPA, BaFin, Atruvia, DZ Bank, Consors Bank, UniCredit, Bloomberg, Reuters, Portfolio, Derivate, Hedging, Compliance, Risikomanagement"
+initial_prompt = "MiFID, DSGVO, KYC, AML, PSD2, SWIFT, SEPA, BaFin, Bloomberg, Reuters, Portfolio, Derivate, Hedging, Compliance, Risikomanagement, Rendite, Volatilität"
 ```
 
 **Custom - mix your own:**

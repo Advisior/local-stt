@@ -190,8 +190,7 @@ class STTDaemon:
             text = format_paragraphs(text)
 
             word_count = len(text.split())
-            display_text = text[:100] + "..." if len(text) > 100 else text
-            self._logger.info("Transcribed: %s", display_text)
+            self._logger.info("Transcribed %d words", word_count)
             if not output_text(text, window_info, self.config):
                 self._logger.warning("Failed to output transcription")
             self._overlay_send(f"DONE {word_count}")
