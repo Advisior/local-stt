@@ -79,6 +79,19 @@ class MLXWhisperEngine:
             kwargs = {
                 "path_or_hf_repo": self._hf_repo,
                 "verbose": False,
+                # Prevent token repetition loops under CPU load.
+                # compression_ratio_threshold aborts runs that produce
+                # repetitive output (e.g. "Pol Pol Pol...").
+                "compression_ratio_threshold": 2.4,
+                # Filter near-silence segments to avoid wrong-language
+                # hallucinations on borderline audio.
+                "no_speech_threshold": 0.6,
+                # Disable conditioning on previous segment to prevent
+                # repetition cascades across segments.
+                "condition_on_previous_text": False,
+                "task": "transcribe",
+                "temperature": 0,
+                "word_timestamps": False,
             }
             if self.language:
                 kwargs["language"] = self.language
@@ -86,7 +99,26 @@ class MLXWhisperEngine:
                 kwargs["initial_prompt"] = self.initial_prompt
 
             result = _mlx_whisper.transcribe(audio, **kwargs)
-            return result.get("text", "").strip()
+            text = result.get("text", "").strip()
+
+            if self._has_excessive_repetition(text):
+                self._logger.warning(
+                    "Repetitive output detected (likely CPU load), discarding transcription"
+                )
+                return ""
+
+            return text
         except Exception:
             self._logger.exception("MLX Whisper transcription failed")
             return ""
+
+    @staticmethod
+    def _has_excessive_repetition(text: str, threshold: int = 5) -> bool:
+        """Return True if more than `threshold` consecutive identical words."""
+        words = text.split()
+        if len(words) < threshold:
+            return False
+        for i in range(len(words) - threshold + 1):
+            if len(set(words[i : i + threshold])) == 1:
+                return True
+        return False
