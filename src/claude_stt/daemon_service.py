@@ -46,6 +46,7 @@ class STTDaemon:
 
         # Recording state
         self._record_start_time: float = 0
+        self._last_duration_s: float = 0.0
         self._original_window: Optional[WindowInfo] = None
         # Overlay subprocess
         self._overlay_proc: Optional[subprocess.Popen] = None
@@ -202,7 +203,30 @@ class STTDaemon:
             self._logger.info("Transcribed %d words: %r", word_count, preview)
             if not output_text(text, window_info, self.config):
                 self._logger.warning("Failed to output transcription")
+            self._append_history(text, self._last_duration_s, db)
             self._overlay_send(f"DONE {word_count}")
+
+    def _append_history(self, text: str, duration_s: float, db: float) -> None:
+        """Append transcription to history file, keeping last 100 entries."""
+        import json
+        from datetime import datetime
+        history_path = Config.get_config_dir() / "history.jsonl"
+        entry = {
+            "timestamp": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+            "text": text,
+            "duration_s": round(duration_s, 1),
+            "db": round(db, 1),
+            "words": len(text.split()),
+        }
+        entries = []
+        if history_path.exists():
+            try:
+                entries = [json.loads(line) for line in history_path.read_text().splitlines() if line.strip()]
+            except Exception:
+                entries = []
+        entries.append(entry)
+        entries = entries[-100:]
+        history_path.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
 
     def _on_recording_start(self):
         """Called when recording should start."""
@@ -238,6 +262,7 @@ class STTDaemon:
 
             self._recording = False
             elapsed = time.time() - self._record_start_time
+            self._last_duration_s = elapsed
 
             if elapsed < self.config.min_recording_seconds:
                 self._logger.info(
