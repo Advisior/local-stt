@@ -215,8 +215,8 @@ class STTDaemon:
         entry = {
             "timestamp": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
             "text": text,
-            "duration_s": round(duration_s, 1),
-            "db": round(db, 1),
+            "duration_s": round(float(duration_s), 1),
+            "db": round(float(db), 1),
             "words": len(text.split()),
         }
         entries = []
