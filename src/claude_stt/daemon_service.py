@@ -195,7 +195,7 @@ class STTDaemon:
                 continue
 
             # Fix common mis-transcriptions, then format paragraphs
-            text = fix_transcription_errors(text)
+            text = fix_transcription_errors(text, self.config.corrections)
             text = format_paragraphs(text)
 
             word_count = len(text.split())
