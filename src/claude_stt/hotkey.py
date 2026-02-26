@@ -257,15 +257,13 @@ class HotkeyListener:
         if normalized is None:
             return
 
-        is_hotkey_key = normalized in self._hotkey_keys
-
         with self._lock:
             self._pressed_keys.add(normalized)
 
             # Check if hotkey combination is pressed
             if self._hotkey_keys.issubset(self._pressed_keys):
                 if self._hotkey_active:
-                    return False if is_hotkey_key else None
+                    return
                 self._hotkey_active = True
                 if self.mode == "toggle":
                     # Toggle mode: press to start/stop
@@ -280,18 +278,13 @@ class HotkeyListener:
                     if not self._is_recording:
                         self._is_recording = True
                         self._enqueue_event("start", self.on_start)
-
-        # Suppress hotkey key events so they don't reach other applications
-        if is_hotkey_key:
-            return False
+        # Event suppression is handled by _intercept_event (macOS) via intercept= param
 
     def _on_release(self, key):
         """Handle key release event."""
         normalized = self._normalize_key(key)
         if normalized is None:
             return
-
-        is_hotkey_key = normalized in self._hotkey_keys
 
         with self._lock:
             self._pressed_keys.discard(normalized)
@@ -303,10 +296,7 @@ class HotkeyListener:
                 if normalized in self._hotkey_keys:
                     self._is_recording = False
                     self._enqueue_event("stop", self.on_stop)
-
-        # Suppress hotkey key events so they don't reach other applications
-        if is_hotkey_key:
-            return False
+        # Event suppression is handled by _intercept_event (macOS) via intercept= param
 
     def start(self) -> bool:
         """Start listening for hotkeys.
