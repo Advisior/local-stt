@@ -282,6 +282,9 @@ class STTDaemon:
             self._last_start_attempt = now
 
             self._recording = True
+            # Play start sound BEFORE muting so it's audible
+            if self.config.sound_effects:
+                play_sound("start")
             if self.config.mute_on_record:
                 self._mute_system_audio()
             self._record_start_time = time.time()
@@ -292,8 +295,6 @@ class STTDaemon:
             # Start recording
             if self._recorder and self._recorder.start():
                 self._logger.info("Recording started")
-                if self.config.sound_effects:
-                    play_sound("start")
                 self._overlay_send("RECORDING")
             else:
                 self._logger.error("Audio recorder failed to start")
