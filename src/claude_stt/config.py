@@ -4,7 +4,7 @@ import logging
 import os
 import platform
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
@@ -40,6 +40,8 @@ class Config:
     # Audio settings
     sample_rate: int = 16000
     max_recording_seconds: int = 300  # 5 minutes
+    min_recording_seconds: float = 0.8   # ignore recordings shorter than this
+    min_audio_db: float = -55.0           # ignore recordings quieter than this
     audio_device: str | int | None = None  # None = system default
 
     # Output settings
@@ -47,10 +49,12 @@ class Config:
 
     # Feedback settings
     sound_effects: bool = True
+    mute_on_record: bool = False
 
     # Language settings
     language: str | None = None
     initial_prompt: str | None = None
+    corrections: dict = field(default_factory=dict)
 
     @classmethod
     def get_config_dir(cls) -> Path:
@@ -100,6 +104,7 @@ class Config:
                 data = tomli.load(f)
 
             stt_config = data.get("claude-stt", {})
+            corrections = {str(k): str(v) for k, v in data.get("corrections", {}).items()}
             config = cls(
                 hotkey=stt_config.get("hotkey", cls.hotkey),
                 mode=stt_config.get("mode", cls.mode),
@@ -110,11 +115,15 @@ class Config:
                 max_recording_seconds=stt_config.get(
                     "max_recording_seconds", cls.max_recording_seconds
                 ),
+                min_recording_seconds=stt_config.get("min_recording_seconds", cls.min_recording_seconds),
+                min_audio_db=stt_config.get("min_audio_db", cls.min_audio_db),
                 audio_device=stt_config.get("audio_device", cls.audio_device),
                 output_mode=stt_config.get("output_mode", cls.output_mode),
                 sound_effects=stt_config.get("sound_effects", cls.sound_effects),
+                mute_on_record=stt_config.get("mute_on_record", cls.mute_on_record),
                 language=stt_config.get("language", cls.language),
                 initial_prompt=stt_config.get("initial_prompt", cls.initial_prompt),
+                corrections=corrections,
             )
             config = config.validate()
             if legacy_path and tomli_w is not None:
@@ -148,8 +157,11 @@ class Config:
             "whisper_model": self.whisper_model,
             "sample_rate": self.sample_rate,
             "max_recording_seconds": self.max_recording_seconds,
+            "min_recording_seconds": self.min_recording_seconds,
+            "min_audio_db": self.min_audio_db,
             "output_mode": self.output_mode,
             "sound_effects": self.sound_effects,
+            "mute_on_record": self.mute_on_record,
         }
         # Only include optional fields when they have values (TOML cannot serialize None)
         if self.audio_device is not None:

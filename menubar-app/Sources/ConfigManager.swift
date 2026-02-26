@@ -9,6 +9,8 @@ class ConfigManager: ObservableObject {
     @Published var initialPrompt: String = ""
     @Published var soundEffects: Bool = true
     @Published var autoStartDaemon: Bool = true
+    @Published var corrections: [String: String] = [:]
+    @Published var muteOnRecord: Bool = false
 
     // Read-only display
     @Published var engine: String = "moonshine"
@@ -89,12 +91,17 @@ class ConfigManager: ObservableObject {
         guard let content = try? String(contentsOf: configURL, encoding: .utf8)
         else { return }
 
+        var currentSection = ""
+        var loadedCorrections: [String: String] = [:]
+
         for line in content.components(separatedBy: .newlines) {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            guard !trimmed.hasPrefix("["),
-                  !trimmed.hasPrefix("#"),
-                  !trimmed.isEmpty
-            else { continue }
+            guard !trimmed.hasPrefix("#"), !trimmed.isEmpty else { continue }
+
+            if trimmed.hasPrefix("[") && trimmed.hasSuffix("]") {
+                currentSection = String(trimmed.dropFirst().dropLast())
+                continue
+            }
 
             let parts = trimmed.split(separator: "=", maxSplits: 1)
             guard parts.count == 2 else { continue }
@@ -102,6 +109,11 @@ class ConfigManager: ObservableObject {
             let key = parts[0].trimmingCharacters(in: .whitespaces)
             let raw = parts[1].trimmingCharacters(in: .whitespaces)
             let value = unquote(raw)
+
+            if currentSection == "corrections" {
+                loadedCorrections[key] = value
+                continue
+            }
 
             switch key {
             case "hotkey": hotkey = value
@@ -113,9 +125,12 @@ class ConfigManager: ObservableObject {
             case "initial_prompt": initialPrompt = value
             case "sound_effects": soundEffects = (value == "true")
             case "auto_start_daemon": autoStartDaemon = (value == "true")
+            case "mute_on_record": muteOnRecord = (value == "true")
             default: break
             }
         }
+
+        corrections = loadedCorrections
     }
 
     // MARK: - Validation
@@ -189,6 +204,7 @@ class ConfigManager: ObservableObject {
         lines.append("output_mode = \"auto\"")
         lines.append("sound_effects = \(soundEffects)")
         lines.append("auto_start_daemon = \(autoStartDaemon)")
+        lines.append("mute_on_record = \(muteOnRecord)")
 
         if !language.isEmpty {
             lines.append("language = \"\(escape(language))\"")
@@ -197,12 +213,28 @@ class ConfigManager: ObservableObject {
             lines.append("initial_prompt = \"\(escape(initialPrompt))\"")
         }
 
+        if !corrections.isEmpty {
+            lines.append("")
+            lines.append("[corrections]")
+            for (wrong, right) in corrections.sorted(by: { $0.key < $1.key }) {
+                lines.append("\(wrong) = \"\(escape(right))\"")
+            }
+        }
+
         let content = lines.joined(separator: "\n") + "\n"
 
         try? FileManager.default.createDirectory(
             at: Self.configDir, withIntermediateDirectories: true
         )
         try? content.write(to: configURL, atomically: true, encoding: .utf8)
+    }
+
+    func addCorrection(wrong: String, right: String) {
+        let w = wrong.trimmingCharacters(in: .whitespaces)
+        let r = right.trimmingCharacters(in: .whitespaces)
+        guard !w.isEmpty, !r.isEmpty, w != r else { return }
+        corrections[w] = r
+        save()
     }
 
     // MARK: - Helpers

@@ -46,7 +46,10 @@ class STTDaemon:
 
         # Recording state
         self._record_start_time: float = 0
+        self._last_start_attempt: float = 0.0  # debounce double hotkey events
+        self._last_duration_s: float = 0.0
         self._original_window: Optional[WindowInfo] = None
+        self._pre_record_volume: int | None = None
         # Overlay subprocess
         self._overlay_proc: Optional[subprocess.Popen] = None
         # Threading
@@ -163,45 +166,127 @@ class STTDaemon:
             if item is None:
                 break
 
-            audio, window_info = item
-            if not self._engine:
-                continue
-
-            # Log audio level
-            rms = np.sqrt(np.mean(audio**2))
-            db = 20 * np.log10(max(rms, 1e-10))
-            self._logger.info("Transcribing audio (%d samples, %.1f dB)...", len(audio), db)
             try:
-                text = self._engine.transcribe(audio, self.config.sample_rate)
+                self._process_transcription(item)
             except Exception:
-                self._logger.exception("Transcription failed")
-                continue
-
-            text = text.strip()
-            if not text:
-                self._logger.info("No speech detected")
-                if self.config.sound_effects:
-                    play_sound("warning")
+                self._logger.exception("Unhandled error in transcription worker — thread kept alive")
                 self._overlay_send("CANCEL")
-                continue
 
-            # Fix common mis-transcriptions, then format paragraphs
-            text = fix_transcription_errors(text)
-            text = format_paragraphs(text)
+    def _process_transcription(self, item) -> None:
+        """Process a single transcription item from the queue."""
+        audio, window_info = item
+        if not self._engine:
+            return
 
-            word_count = len(text.split())
-            self._logger.info("Transcribed %d words", word_count)
-            if not output_text(text, window_info, self.config):
-                self._logger.warning("Failed to output transcription")
-            self._overlay_send(f"DONE {word_count}")
+        rms = np.sqrt(np.mean(audio**2))
+        db = 20 * np.log10(max(rms, 1e-10))
+        if db < self.config.min_audio_db:
+            self._logger.info(
+                "Skipping: audio too quiet (%.1f dB < %.1f dB threshold)",
+                db, self.config.min_audio_db,
+            )
+            self._overlay_send("CANCEL")
+            return
+
+        self._logger.info("Transcribing audio (%d samples, %.1f dB)...", len(audio), db)
+        try:
+            text = self._engine.transcribe(audio, self.config.sample_rate)
+        except Exception:
+            self._logger.exception("Transcription failed")
+            self._overlay_send("CANCEL")
+            return
+
+        text = text.strip()
+        if not text:
+            self._logger.info("No speech detected")
+            if self.config.sound_effects:
+                play_sound("warning")
+            self._overlay_send("CANCEL")
+            return
+
+        text = fix_transcription_errors(text, self.config.corrections)
+        text = format_paragraphs(text)
+
+        word_count = len(text.split())
+        preview = text[:120].replace("\n", " ")
+        self._logger.info("Transcribed %d words: %r", word_count, preview)
+        if not output_text(text, window_info, self.config):
+            self._logger.warning("Failed to output transcription")
+        self._append_history(text, self._last_duration_s, db)
+        self._overlay_send(f"DONE {word_count}")
+
+    def _append_history(self, text: str, duration_s: float, db: float) -> None:
+        """Append transcription to history file, keeping last 100 entries."""
+        import json
+        from datetime import datetime
+        history_path = Config.get_config_dir() / "history.jsonl"
+        entry = {
+            "timestamp": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+            "text": text,
+            "duration_s": round(float(duration_s), 1),
+            "db": round(float(db), 1),
+            "words": len(text.split()),
+        }
+        entries = []
+        if history_path.exists():
+            try:
+                entries = [json.loads(line) for line in history_path.read_text().splitlines() if line.strip()]
+            except Exception:
+                entries = []
+        entries.append(entry)
+        entries = entries[-100:]
+        history_path.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
+
+    def _mute_system_audio(self) -> None:
+        """Mute system output and store original volume for restore."""
+        try:
+            result = subprocess.run(
+                ["osascript", "-e", "output volume of (get volume settings)"],
+                capture_output=True, text=True, timeout=1,
+            )
+            self._pre_record_volume = int(result.stdout.strip())
+            subprocess.run(
+                ["osascript", "-e", "set volume output muted true"],
+                capture_output=True, timeout=1,
+            )
+        except Exception:
+            self._logger.debug("Failed to mute system audio", exc_info=True)
+            self._pre_record_volume = None
+
+    def _restore_system_audio(self) -> None:
+        """Restore system output volume after recording."""
+        if self._pre_record_volume is None:
+            return
+        try:
+            subprocess.run(
+                ["osascript", "-e", f"set volume output volume {self._pre_record_volume}"],
+                capture_output=True, timeout=1,
+            )
+            subprocess.run(
+                ["osascript", "-e", "set volume output muted false"],
+                capture_output=True, timeout=1,
+            )
+        except Exception:
+            self._logger.debug("Failed to restore system audio", exc_info=True)
+        finally:
+            self._pre_record_volume = None
 
     def _on_recording_start(self):
         """Called when recording should start."""
         with self._lock:
             if self._recording:
                 return
+            now = time.time()
+            if now - self._last_start_attempt < 0.5:
+                return
+            self._last_start_attempt = now
 
             self._recording = True
+            # Play start sound BEFORE muting so it's audible
+            if self.config.sound_effects:
+                play_sound("start")
+            if self.config.mute_on_record:
+                self._mute_system_audio()
             self._record_start_time = time.time()
 
             # Capture the active window
@@ -210,8 +295,6 @@ class STTDaemon:
             # Start recording
             if self._recorder and self._recorder.start():
                 self._logger.info("Recording started")
-                if self.config.sound_effects:
-                    play_sound("start")
                 self._overlay_send("RECORDING")
             else:
                 self._logger.error("Audio recorder failed to start")
@@ -228,7 +311,18 @@ class STTDaemon:
                 return
 
             self._recording = False
+            if self.config.mute_on_record:
+                self._restore_system_audio()
             elapsed = time.time() - self._record_start_time
+            self._last_duration_s = elapsed
+
+            if elapsed < self.config.min_recording_seconds:
+                self._logger.info(
+                    "Skipping: recording too short (%.1fs < %.1fs threshold)",
+                    elapsed, self.config.min_recording_seconds,
+                )
+                self._overlay_send("CANCEL")
+                return
 
             # Stop recording
             if self._recorder:
@@ -246,8 +340,12 @@ class STTDaemon:
                 self._transcribe_queue.put_nowait((audio, window_info))
             except queue.Full:
                 self._logger.warning("Dropping transcription; queue is full")
-        elif self.config.sound_effects:
-            play_sound("warning")
+                self._overlay_send("CANCEL")
+        else:
+            # No audio captured — cancel the transcribing indicator
+            self._overlay_send("CANCEL")
+            if self.config.sound_effects:
+                play_sound("warning")
 
     def _check_max_recording_time(self) -> None:
         """Check if max recording time has been reached."""

@@ -46,10 +46,14 @@ _CLOSING_RE = re.compile(
 )
 
 
-def fix_transcription_errors(text: str) -> str:
-    """Fix common Whisper mis-transcriptions."""
+def fix_transcription_errors(text: str, user_corrections: dict | None = None) -> str:
+    """Fix common Whisper mis-transcriptions (hardcoded + user-defined)."""
     for pattern, replacement in _CORRECTIONS:
         text = pattern.sub(replacement, text)
+    if user_corrections:
+        for wrong, right in user_corrections.items():
+            pat = re.compile(r'\b' + re.escape(wrong) + r'\b')
+            text = pat.sub(right, text)
     return text
 
 

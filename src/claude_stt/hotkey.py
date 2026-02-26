@@ -184,6 +184,21 @@ class HotkeyListener:
             except Exception:
                 self._logger.exception("Hotkey callback failed: %s", label)
 
+    def _intercept_event(self, event_type, event):
+        """macOS-only: suppress hotkey key events, pass everything else through."""
+        try:
+            from Quartz import CGEventGetIntegerValueField, kCGKeyboardEventKeycode
+            vk = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
+            for hotkey_key in self._hotkey_keys:
+                value = getattr(hotkey_key, "value", hotkey_key)
+                key_vk = getattr(value, "vk", None)
+                if key_vk is not None and key_vk == vk:
+                    self._logger.debug("Intercept: suppressing vk=%d", vk)
+                    return None  # suppress
+        except Exception:
+            self._logger.exception("Intercept error")
+        return event  # pass through
+
     def _enqueue_event(self, label: str, callback: Optional[Callable[[], None]]) -> None:
         self._ensure_worker()
         try:
@@ -263,6 +278,7 @@ class HotkeyListener:
                     if not self._is_recording:
                         self._is_recording = True
                         self._enqueue_event("start", self.on_start)
+        # Event suppression is handled by _intercept_event (macOS) via intercept= param
 
     def _on_release(self, key):
         """Handle key release event."""
@@ -280,6 +296,7 @@ class HotkeyListener:
                 if normalized in self._hotkey_keys:
                     self._is_recording = False
                     self._enqueue_event("stop", self.on_stop)
+        # Event suppression is handled by _intercept_event (macOS) via intercept= param
 
     def start(self) -> bool:
         """Start listening for hotkeys.
@@ -297,6 +314,7 @@ class HotkeyListener:
             self._listener = keyboard.Listener(
                 on_press=self._on_press,
                 on_release=self._on_release,
+                intercept=self._intercept_event if platform.system() == "Darwin" else None,
             )
             self._listener.start()
             self._ensure_worker()

@@ -113,6 +113,9 @@ private struct GeneralTab: View {
             Section {
                 Toggle("Sound Effects", isOn: $config.soundEffects)
 
+                Toggle("Mute system audio while recording", isOn: $config.muteOnRecord)
+                    .onChange(of: config.muteOnRecord) { _ in config.save() }
+
                 VStack(alignment: .leading, spacing: 4) {
                     LabeledContent("Engine") {
                         Picker("", selection: $config.engine) {

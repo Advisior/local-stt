@@ -8,6 +8,7 @@ class MenuBarController: NSObject {
     private let config = ConfigManager()
     private var cancellables = Set<AnyCancellable>()
     private var settingsWindow: NSWindow?
+    private var historyWindow: NSWindow?
     private var popover: NSPopover!
     private var eventMonitor: Any?
 
@@ -58,6 +59,10 @@ class MenuBarController: NSObject {
             onSettings: { [weak self] in
                 self?.closePopover()
                 self?.onOpenSettings()
+            },
+            onHistory: { [weak self] in
+                self?.closePopover()
+                self?.onOpenHistory()
             },
             onOpenLog: { [weak self] in
                 self?.closePopover()
@@ -132,6 +137,10 @@ class MenuBarController: NSObject {
             return
         }
 
+        // Clean up any non-visible stale window reference
+        settingsWindow?.close()
+        settingsWindow = nil
+
         config.load()
 
         let settingsView = SettingsView(
@@ -151,12 +160,65 @@ class MenuBarController: NSObject {
         )
         window.title = "Local-STT Settings"
         window.contentView = hostingView
-        window.center()
         window.isReleasedWhenClosed = false
+
+        // Center on the screen containing the mouse cursor, not the system
+        // main screen. On multi-monitor setups window.center() always places
+        // the window on the primary display, which may not be the active one.
+        let mouseLocation = NSEvent.mouseLocation
+        let activeScreen = NSScreen.screens.first { screen in
+            NSMouseInRect(mouseLocation, screen.frame, false)
+        } ?? NSScreen.main
+        if let screen = activeScreen {
+            let sf = screen.visibleFrame
+            let origin = NSPoint(x: sf.midX - 260, y: sf.midY - 270)
+            window.setFrameOrigin(origin)
+        } else {
+            window.center()
+        }
+
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
 
         settingsWindow = window
+    }
+
+    private func onOpenHistory() {
+        if let window = historyWindow, window.isVisible {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        historyWindow?.close()
+        historyWindow = nil
+
+        let historyView = HistoryView(
+            config: config,
+            onDismiss: { [weak self] in
+                self?.historyWindow?.close()
+            }
+        )
+        let hostingView = NSHostingView(rootView: historyView)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 560, height: 520),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Transcript History"
+        window.contentView = hostingView
+        window.isReleasedWhenClosed = false
+        let mouseLocation = NSEvent.mouseLocation
+        let activeScreen = NSScreen.screens.first { NSMouseInRect(mouseLocation, $0.frame, false) } ?? NSScreen.main
+        if let screen = activeScreen {
+            let sf = screen.visibleFrame
+            window.setFrameOrigin(NSPoint(x: sf.midX - 280, y: sf.midY - 260))
+        } else {
+            window.center()
+        }
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        historyWindow = window
     }
 
     private func onOpenLog() {

@@ -104,7 +104,13 @@ struct HotkeyField: NSViewRepresentable {
         }
 
         deinit {
-            stopRecording()
+            // Only remove the event monitor — do NOT write to parent.isRecording here.
+            // The SwiftUI graph may already be invalidated during window teardown,
+            // and writing to a Binding after graph invalidation causes SIGABRT.
+            if let monitor = localMonitor {
+                NSEvent.removeMonitor(monitor)
+                localMonitor = nil
+            }
         }
 
         func startRecording() {
@@ -207,6 +213,14 @@ struct HotkeyField: NSViewRepresentable {
             case kVK_F10: return "f10"
             case kVK_F11: return "f11"
             case kVK_F12: return "f12"
+            case kVK_F13: return "f13"
+            case kVK_F14: return "f14"
+            case kVK_F15: return "f15"
+            case kVK_F16: return "f16"
+            case kVK_F17: return "f17"
+            case kVK_F18: return "f18"
+            case kVK_F19: return "f19"
+            case kVK_F20: return "f20"
             case kVK_ANSI_A: return "a"
             case kVK_ANSI_B: return "b"
             case kVK_ANSI_C: return "c"
