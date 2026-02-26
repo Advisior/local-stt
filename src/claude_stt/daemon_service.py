@@ -48,6 +48,7 @@ class STTDaemon:
         self._record_start_time: float = 0
         self._last_duration_s: float = 0.0
         self._original_window: Optional[WindowInfo] = None
+        self._pre_record_volume: int | None = None
         # Overlay subprocess
         self._overlay_proc: Optional[subprocess.Popen] = None
         # Threading
@@ -228,6 +229,40 @@ class STTDaemon:
         entries = entries[-100:]
         history_path.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
 
+    def _mute_system_audio(self) -> None:
+        """Mute system output and store original volume for restore."""
+        try:
+            result = subprocess.run(
+                ["osascript", "-e", "output volume of (get volume settings)"],
+                capture_output=True, text=True, timeout=1,
+            )
+            self._pre_record_volume = int(result.stdout.strip())
+            subprocess.run(
+                ["osascript", "-e", "set volume output muted true"],
+                capture_output=True, timeout=1,
+            )
+        except Exception:
+            self._logger.debug("Failed to mute system audio", exc_info=True)
+            self._pre_record_volume = None
+
+    def _restore_system_audio(self) -> None:
+        """Restore system output volume after recording."""
+        if self._pre_record_volume is None:
+            return
+        try:
+            subprocess.run(
+                ["osascript", "-e", f"set volume output volume {self._pre_record_volume}"],
+                capture_output=True, timeout=1,
+            )
+            subprocess.run(
+                ["osascript", "-e", "set volume output muted false"],
+                capture_output=True, timeout=1,
+            )
+        except Exception:
+            self._logger.debug("Failed to restore system audio", exc_info=True)
+        finally:
+            self._pre_record_volume = None
+
     def _on_recording_start(self):
         """Called when recording should start."""
         with self._lock:
@@ -235,6 +270,8 @@ class STTDaemon:
                 return
 
             self._recording = True
+            if self.config.mute_on_record:
+                self._mute_system_audio()
             self._record_start_time = time.time()
 
             # Capture the active window
@@ -261,6 +298,8 @@ class STTDaemon:
                 return
 
             self._recording = False
+            if self.config.mute_on_record:
+                self._restore_system_audio()
             elapsed = time.time() - self._record_start_time
             self._last_duration_s = elapsed
 
