@@ -175,6 +175,7 @@ class STTDaemon:
                 text = self._engine.transcribe(audio, self.config.sample_rate)
             except Exception:
                 self._logger.exception("Transcription failed")
+                self._overlay_send("CANCEL")
                 continue
 
             text = text.strip()
@@ -190,7 +191,8 @@ class STTDaemon:
             text = format_paragraphs(text)
 
             word_count = len(text.split())
-            self._logger.info("Transcribed %d words", word_count)
+            preview = text[:120].replace("\n", " ")
+            self._logger.info("Transcribed %d words: %r", word_count, preview)
             if not output_text(text, window_info, self.config):
                 self._logger.warning("Failed to output transcription")
             self._overlay_send(f"DONE {word_count}")
@@ -246,8 +248,12 @@ class STTDaemon:
                 self._transcribe_queue.put_nowait((audio, window_info))
             except queue.Full:
                 self._logger.warning("Dropping transcription; queue is full")
-        elif self.config.sound_effects:
-            play_sound("warning")
+                self._overlay_send("CANCEL")
+        else:
+            # No audio captured — cancel the transcribing indicator
+            self._overlay_send("CANCEL")
+            if self.config.sound_effects:
+                play_sound("warning")
 
     def _check_max_recording_time(self) -> None:
         """Check if max recording time has been reached."""
