@@ -46,6 +46,7 @@ class STTDaemon:
 
         # Recording state
         self._record_start_time: float = 0
+        self._last_start_attempt: float = 0.0  # debounce double hotkey events
         self._last_duration_s: float = 0.0
         self._original_window: Optional[WindowInfo] = None
         self._pre_record_volume: int | None = None
@@ -268,6 +269,10 @@ class STTDaemon:
         with self._lock:
             if self._recording:
                 return
+            now = time.time()
+            if now - self._last_start_attempt < 0.2:
+                return
+            self._last_start_attempt = now
 
             self._recording = True
             if self.config.mute_on_record:

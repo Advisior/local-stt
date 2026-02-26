@@ -13,6 +13,7 @@ struct HistoryView: View {
     var onDismiss: () -> Void
 
     @State private var entries: [HistoryEntry] = []
+    private let refreshTimer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
     @State private var selectedWord: String = ""
     @State private var correctionText: String = ""
     @State private var correctionEntryId: UUID? = nil
@@ -63,6 +64,7 @@ struct HistoryView: View {
         }
         .frame(width: 560, height: 480)
         .onAppear { loadHistory() }
+        .onReceive(refreshTimer) { _ in loadHistory() }
     }
 
     private func loadHistory() {
