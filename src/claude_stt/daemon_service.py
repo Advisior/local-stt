@@ -170,6 +170,13 @@ class STTDaemon:
             # Log audio level
             rms = np.sqrt(np.mean(audio**2))
             db = 20 * np.log10(max(rms, 1e-10))
+            if db < self.config.min_audio_db:
+                self._logger.info(
+                    "Skipping: audio too quiet (%.1f dB < %.1f dB threshold)",
+                    db, self.config.min_audio_db,
+                )
+                self._overlay_send("CANCEL")
+                continue
             self._logger.info("Transcribing audio (%d samples, %.1f dB)...", len(audio), db)
             try:
                 text = self._engine.transcribe(audio, self.config.sample_rate)
@@ -231,6 +238,14 @@ class STTDaemon:
 
             self._recording = False
             elapsed = time.time() - self._record_start_time
+
+            if elapsed < self.config.min_recording_seconds:
+                self._logger.info(
+                    "Skipping: recording too short (%.1fs < %.1fs threshold)",
+                    elapsed, self.config.min_recording_seconds,
+                )
+                self._overlay_send("CANCEL")
+                return
 
             # Stop recording
             if self._recorder:
