@@ -1,0 +1,39 @@
+# Credentials & Secrets
+.env
+.env.*
+!.env.example
+!.env.template
+!.env.sample
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+
+# Temporary/scratch files
+_scratch/
+
+# Editor configs (may contain tokens or API keys)
+.cursor/
+.vscode/
+.windsurf/
+.idea/
+
+# Build artifacts
+dist/
+build/
+.next/
+.nuxt/
+out/
+.turbo/
+
+# Dependencies
+node_modules/
+.venv/
+__pycache__/
+.tox/
+
+# Logs
+*.log
+logs/
+/tmp/

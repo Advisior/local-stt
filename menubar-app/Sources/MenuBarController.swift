@@ -132,6 +132,10 @@ class MenuBarController: NSObject {
             return
         }
 
+        // Clean up any non-visible stale window reference
+        settingsWindow?.close()
+        settingsWindow = nil
+
         config.load()
 
         let settingsView = SettingsView(
@@ -151,8 +155,23 @@ class MenuBarController: NSObject {
         )
         window.title = "Local-STT Settings"
         window.contentView = hostingView
-        window.center()
         window.isReleasedWhenClosed = false
+
+        // Center on the screen containing the mouse cursor, not the system
+        // main screen. On multi-monitor setups window.center() always places
+        // the window on the primary display, which may not be the active one.
+        let mouseLocation = NSEvent.mouseLocation
+        let activeScreen = NSScreen.screens.first { screen in
+            NSMouseInRect(mouseLocation, screen.frame, false)
+        } ?? NSScreen.main
+        if let screen = activeScreen {
+            let sf = screen.visibleFrame
+            let origin = NSPoint(x: sf.midX - 260, y: sf.midY - 270)
+            window.setFrameOrigin(origin)
+        } else {
+            window.center()
+        }
+
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
 
