@@ -4,6 +4,7 @@ struct MenuPopoverView: View {
     @ObservedObject var daemon: DaemonManager
     @ObservedObject var config: ConfigManager
     var onSettings: () -> Void
+    var onHistory: () -> Void
     var onOpenLog: () -> Void
     var onQuit: () -> Void
 
@@ -117,6 +118,13 @@ struct MenuPopoverView: View {
                 shortcut: "\u{2318},"
             ) {
                 onSettings()
+            }
+
+            PopoverMenuItem(
+                icon: "clock.arrow.circlepath",
+                title: "History"
+            ) {
+                onHistory()
             }
 
             PopoverMenuItem(
