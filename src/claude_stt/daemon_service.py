@@ -166,47 +166,54 @@ class STTDaemon:
             if item is None:
                 break
 
-            audio, window_info = item
-            if not self._engine:
-                continue
-
-            # Log audio level
-            rms = np.sqrt(np.mean(audio**2))
-            db = 20 * np.log10(max(rms, 1e-10))
-            if db < self.config.min_audio_db:
-                self._logger.info(
-                    "Skipping: audio too quiet (%.1f dB < %.1f dB threshold)",
-                    db, self.config.min_audio_db,
-                )
-                self._overlay_send("CANCEL")
-                continue
-            self._logger.info("Transcribing audio (%d samples, %.1f dB)...", len(audio), db)
             try:
-                text = self._engine.transcribe(audio, self.config.sample_rate)
+                self._process_transcription(item)
             except Exception:
-                self._logger.exception("Transcription failed")
+                self._logger.exception("Unhandled error in transcription worker — thread kept alive")
                 self._overlay_send("CANCEL")
-                continue
 
-            text = text.strip()
-            if not text:
-                self._logger.info("No speech detected")
-                if self.config.sound_effects:
-                    play_sound("warning")
-                self._overlay_send("CANCEL")
-                continue
+    def _process_transcription(self, item) -> None:
+        """Process a single transcription item from the queue."""
+        audio, window_info = item
+        if not self._engine:
+            return
 
-            # Fix common mis-transcriptions, then format paragraphs
-            text = fix_transcription_errors(text, self.config.corrections)
-            text = format_paragraphs(text)
+        rms = np.sqrt(np.mean(audio**2))
+        db = 20 * np.log10(max(rms, 1e-10))
+        if db < self.config.min_audio_db:
+            self._logger.info(
+                "Skipping: audio too quiet (%.1f dB < %.1f dB threshold)",
+                db, self.config.min_audio_db,
+            )
+            self._overlay_send("CANCEL")
+            return
 
-            word_count = len(text.split())
-            preview = text[:120].replace("\n", " ")
-            self._logger.info("Transcribed %d words: %r", word_count, preview)
-            if not output_text(text, window_info, self.config):
-                self._logger.warning("Failed to output transcription")
-            self._append_history(text, self._last_duration_s, db)
-            self._overlay_send(f"DONE {word_count}")
+        self._logger.info("Transcribing audio (%d samples, %.1f dB)...", len(audio), db)
+        try:
+            text = self._engine.transcribe(audio, self.config.sample_rate)
+        except Exception:
+            self._logger.exception("Transcription failed")
+            self._overlay_send("CANCEL")
+            return
+
+        text = text.strip()
+        if not text:
+            self._logger.info("No speech detected")
+            if self.config.sound_effects:
+                play_sound("warning")
+            self._overlay_send("CANCEL")
+            return
+
+        text = fix_transcription_errors(text, self.config.corrections)
+        text = format_paragraphs(text)
+
+        word_count = len(text.split())
+        preview = text[:120].replace("\n", " ")
+        self._logger.info("Transcribed %d words: %r", word_count, preview)
+        if not output_text(text, window_info, self.config):
+            self._logger.warning("Failed to output transcription")
+        self._append_history(text, self._last_duration_s, db)
+        self._overlay_send(f"DONE {word_count}")
 
     def _append_history(self, text: str, duration_s: float, db: float) -> None:
         """Append transcription to history file, keeping last 100 entries."""
@@ -270,7 +277,7 @@ class STTDaemon:
             if self._recording:
                 return
             now = time.time()
-            if now - self._last_start_attempt < 0.2:
+            if now - self._last_start_attempt < 0.5:
                 return
             self._last_start_attempt = now
 

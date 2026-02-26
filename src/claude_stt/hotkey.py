@@ -193,9 +193,10 @@ class HotkeyListener:
                 value = getattr(hotkey_key, "value", hotkey_key)
                 key_vk = getattr(value, "vk", None)
                 if key_vk is not None and key_vk == vk:
+                    self._logger.debug("Intercept: suppressing vk=%d", vk)
                     return None  # suppress
         except Exception:
-            pass
+            self._logger.exception("Intercept error")
         return event  # pass through
 
     def _enqueue_event(self, label: str, callback: Optional[Callable[[], None]]) -> None:
