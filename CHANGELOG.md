@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-03-04
+
+### Added
+- `clipboard_paste` output mode: copies transcription to clipboard and sends Cmd+V, more reliable than keystroke injection in apps that drop rapid key events
+- `isStarting` state in DaemonManager with spinner indicator in menu popover — shows "Starting..." while daemon initialises instead of incorrectly showing "Stopped"
+
+### Changed
+- `output_mode` config now accepts `clipboard_paste` as an additional option (previous options `auto`, `injection`, `clipboard` unchanged)
+
 ## [0.2.0] - 2026-02-17
 
 ### Added

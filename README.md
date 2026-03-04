@@ -119,7 +119,7 @@ For advanced users, the config file is at `~/.config/local-stt/config.toml` and 
 | `language` | `de` | Recognition language (2-letter code) or omit for auto-detect |
 | `initial_prompt` | — | Comma-separated vocabulary terms to improve recognition |
 | `sound_effects` | `true` | Audio feedback on recording start/stop |
-| `output_mode` | `auto` | Text insertion: `auto`, `injection` (keyboard), `clipboard` |
+| `output_mode` | `auto` | Text insertion: `auto`, `injection` (keyboard), `clipboard`, `clipboard_paste` (clipboard + Cmd+V, most compatible) |
 | `max_recording_seconds` | `300` | Maximum recording duration in seconds |
 
 ### Custom Vocabulary

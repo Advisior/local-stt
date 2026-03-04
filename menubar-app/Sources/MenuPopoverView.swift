@@ -44,19 +44,28 @@ struct MenuPopoverView: View {
 
     private var headerSection: some View {
         HStack(spacing: 10) {
-            // Status indicator dot
-            Circle()
-                .fill(daemon.isRunning ? Color.green : Color.red.opacity(0.7))
-                .frame(width: 10, height: 10)
-                .shadow(color: daemon.isRunning ? .green.opacity(0.5) : .clear, radius: 4)
+            // Status indicator
+            if daemon.isStarting {
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .scaleEffect(0.6)
+                    .frame(width: 10, height: 10)
+            } else {
+                Circle()
+                    .fill(daemon.isRunning ? Color.green : Color.red.opacity(0.7))
+                    .frame(width: 10, height: 10)
+                    .shadow(color: daemon.isRunning ? .green.opacity(0.5) : .clear, radius: 4)
+            }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("Local-STT")
                     .font(.system(size: 13, weight: .semibold))
 
-                Text(daemon.isRunning
-                    ? "Running \u{00B7} \(config.engineLabel)"
-                    : "Stopped")
+                Text(daemon.isStarting
+                    ? "Starting..."
+                    : daemon.isRunning
+                        ? "Running \u{00B7} \(config.engineLabel)"
+                        : "Stopped")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
@@ -77,9 +86,10 @@ struct MenuPopoverView: View {
     private var actionsSection: some View {
         VStack(spacing: 2) {
             PopoverMenuItem(
-                icon: daemon.isRunning ? "stop.circle" : "play.circle",
-                title: daemon.isRunning ? "Stop Daemon" : "Start Daemon",
-                tint: daemon.isRunning ? .orange : .green
+                icon: daemon.isStarting ? "ellipsis.circle" : daemon.isRunning ? "stop.circle" : "play.circle",
+                title: daemon.isStarting ? "Starting..." : daemon.isRunning ? "Stop Daemon" : "Start Daemon",
+                tint: daemon.isStarting ? .secondary : daemon.isRunning ? .orange : .green,
+                disabled: daemon.isStarting
             ) {
                 if daemon.isRunning {
                     daemon.stopDaemon()

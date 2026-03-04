@@ -1,6 +1,6 @@
 [project]
 name = "local-stt"
-version = "0.2.0"
+version = "0.3.0"
 description = "Free, local, private speech-to-text for macOS. No cloud, no API costs."
 readme = "README.md"
 requires-python = ">=3.11,<3.14"

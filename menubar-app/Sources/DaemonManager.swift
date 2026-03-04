@@ -4,6 +4,7 @@ import Foundation
 
 class DaemonManager: ObservableObject {
     @Published var isRunning: Bool = false
+    @Published var isStarting: Bool = false
     @Published var permissionsReady: Bool = false
 
     private var timer: Timer?
@@ -179,6 +180,7 @@ class DaemonManager: ObservableObject {
     }
 
     private func launchDaemon(python: URL) {
+        DispatchQueue.main.async { self.isStarting = true }
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let process = Process()
             process.executableURL = python
@@ -214,6 +216,7 @@ class DaemonManager: ObservableObject {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                 self?.checkStatus()
                 self?.checkPermissions()
+                self?.isStarting = false
             }
         }
     }

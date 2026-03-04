@@ -152,6 +152,9 @@ def output_text(
         mode = "injection" if test_injection() else "clipboard"
         _logger.debug("Output mode auto-selected: %s", mode)
 
+    if mode == "clipboard_paste":
+        return _output_via_clipboard_paste(text, config)
+
     if mode != "injection":
         return _output_via_clipboard(text, config)
 
@@ -199,6 +202,51 @@ def _output_via_injection(
         # Fall back to clipboard on any error
         _logger.warning("Injection failed; falling back to clipboard", exc_info=True)
         return _output_via_clipboard(text, config)
+
+
+def _output_via_clipboard_paste(text: str, config: Config) -> bool:
+    """Output text via clipboard and Cmd+V paste (macOS).
+
+    More reliable than character-by-character injection for apps
+    that drop keystrokes under rapid input.
+    """
+    try:
+        try:
+            import pyperclip
+        except ImportError:
+            _logger.warning("pyperclip not installed; falling back to injection")
+            return _output_via_injection(text, None, config)
+
+        # Save current clipboard content
+        try:
+            previous = pyperclip.paste()
+        except Exception:
+            previous = None
+
+        pyperclip.copy(text + " ")
+        time.sleep(0.05)  # let clipboard settle
+
+        if _PYNPUT_AVAILABLE:
+            kb = get_keyboard()
+            kb.press(Key.cmd)
+            kb.press('v')
+            kb.release('v')
+            kb.release(Key.cmd)
+            time.sleep(0.1)
+
+        # Restore previous clipboard
+        if previous is not None:
+            try:
+                pyperclip.copy(previous)
+            except Exception:
+                pass
+
+        if config.sound_effects:
+            play_sound("complete")
+        return True
+    except Exception:
+        _logger.warning("clipboard_paste failed; falling back to injection", exc_info=True)
+        return _output_via_injection(text, None, config)
 
 
 def _output_via_clipboard(text: str, config: Config) -> bool:
