@@ -381,6 +381,12 @@ class STTDaemon:
 
         self._logger.info("Model loaded. Ready for voice input.")
 
+        # Pre-warm the audio stream so the hardware buffer is ready before
+        # the first F1 press. Without this, the first recording captures
+        # zero-filled frames from an uninitialised PortAudio buffer.
+        if self._recorder:
+            self._recorder.prewarm()
+
         # Start overlay indicator
         self._start_overlay()
 
@@ -439,6 +445,9 @@ class STTDaemon:
 
         if self._recording and self._recorder:
             self._recorder.stop()
+
+        if self._recorder:
+            self._recorder.close()
 
         if self._hotkey:
             self._hotkey.stop()

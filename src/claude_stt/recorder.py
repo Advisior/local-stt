@@ -57,6 +57,7 @@ class AudioRecorder:
         self._recording = False
         self._audio_queue: queue.Queue[np.ndarray] = queue.Queue()
         self._stream: Optional["sd.InputStream"] = None
+        self._stream_warm: bool = False  # True once stream is pre-warmed
         self._recorded_chunks: Deque[np.ndarray] = deque()
         self._max_chunks = self._compute_max_chunks()
         self._lock = threading.Lock()
@@ -100,6 +101,57 @@ class AudioRecorder:
         except Exception:
             return []
 
+    def _open_stream(self) -> bool:
+        """Open the PortAudio input stream without starting a capture session."""
+        if sd is None:
+            return False
+        if self._stream is not None:
+            return True
+
+        def callback(indata, frames, time_info, status):
+            if status:
+                self._logger.debug("Audio callback status: %s", status)
+            try:
+                self._audio_queue.put_nowait(indata.copy())
+            except queue.Full:
+                self._logger.debug("Audio queue full; dropping chunk")
+            with self._lock:
+                if self._recording:
+                    self._recorded_chunks.append(indata.copy())
+
+        try:
+            self._stream = sd.InputStream(
+                samplerate=self.config.sample_rate,
+                channels=self.config.channels,
+                dtype=self.config.dtype,
+                blocksize=self.config.blocksize,
+                device=self.config.device,
+                callback=callback,
+            )
+            self._stream.start()
+            return True
+        except Exception:
+            self._logger.exception("Failed to open audio stream")
+            self._stream = None
+            return False
+
+    def prewarm(self) -> bool:
+        """Open the audio stream early so the hardware buffer is ready.
+
+        Call this once at daemon startup. After prewarm(), start() will not
+        reopen the stream and the first recording will have no warmup delay.
+
+        Returns:
+            True if the stream was opened successfully.
+        """
+        if not self._open_stream():
+            return False
+        # Wait for the hardware buffer to fill; initial frames are zeros.
+        time.sleep(0.3)
+        self._stream_warm = True
+        self._logger.debug("Audio stream pre-warmed")
+        return True
+
     def start(self) -> bool:
         """Start recording audio.
 
@@ -112,70 +164,67 @@ class AudioRecorder:
         if self._recording:
             return True
 
-        try:
-            self._audio_queue = queue.Queue(maxsize=self.config.queue_maxsize)
+        self._audio_queue = queue.Queue(maxsize=self.config.queue_maxsize)
+        with self._lock:
             self._recorded_chunks = (
                 deque(maxlen=self._max_chunks) if self._max_chunks else deque()
             )
 
-            def callback(indata, frames, time_info, status):
-                if status:
-                    self._logger.debug("Audio callback status: %s", status)
-                try:
-                    self._audio_queue.put_nowait(indata.copy())
-                except queue.Full:
-                    self._logger.debug("Audio queue full; dropping chunk")
-                with self._lock:
-                    self._recorded_chunks.append(indata.copy())
-
-            self._stream = sd.InputStream(
-                samplerate=self.config.sample_rate,
-                channels=self.config.channels,
-                dtype=self.config.dtype,
-                blocksize=self.config.blocksize,
-                device=self.config.device,
-                callback=callback,
-            )
-            self._stream.start()
-            # Allow PortAudio hardware buffer to fill before capturing.
-            # Without this, the first ~150ms of audio is all zeros
-            # (-131 dB), causing the recording to be silently discarded.
-            time.sleep(0.15)
-            with self._lock:
-                self._recorded_chunks.clear()
+        if self._stream_warm:
+            # Stream already open and hardware buffer is full — just start capture.
             self._recording = True
             return True
 
-        except Exception:
-            self._logger.exception("Failed to start audio recording")
+        # Stream not pre-warmed: open it now and wait for hardware to settle.
+        if not self._open_stream():
             return False
+        time.sleep(0.3)
+        with self._lock:
+            self._recorded_chunks.clear()
+        self._recording = True
+        return True
 
     def stop(self) -> Optional[np.ndarray]:
-        """Stop recording and return all recorded audio.
+        """Stop the current recording session and return captured audio.
+
+        Does not close the underlying stream — keeps it warm for the next
+        recording. Call close() to fully shut down the stream.
 
         Returns:
             Numpy array of all recorded audio, or None if no audio.
         """
-        if not self._recording or self._stream is None:
+        if not self._recording:
             return None
 
-        try:
-            self._stream.stop()
-            self._stream.close()
-        except Exception:
-            self._logger.debug("Failed to stop audio stream cleanly", exc_info=True)
-
-        self._stream = None
         self._recording = False
+
+        if not self._stream_warm and self._stream is not None:
+            # Stream was opened ad-hoc (no prewarm); close it now.
+            try:
+                self._stream.stop()
+                self._stream.close()
+            except Exception:
+                self._logger.debug("Failed to stop audio stream cleanly", exc_info=True)
+            self._stream = None
 
         with self._lock:
             if not self._recorded_chunks:
                 return None
-
-            # Concatenate all chunks
             audio = np.concatenate(list(self._recorded_chunks))
             self._recorded_chunks = deque()
             return np.squeeze(audio)
+
+    def close(self) -> None:
+        """Close the audio stream (call on daemon shutdown)."""
+        self._stream_warm = False
+        self._recording = False
+        if self._stream is not None:
+            try:
+                self._stream.stop()
+                self._stream.close()
+            except Exception:
+                self._logger.debug("Failed to close audio stream", exc_info=True)
+            self._stream = None
 
     def get_chunk(self, timeout: float = 0.1) -> Optional[np.ndarray]:
         """Get the next audio chunk from the recording stream.
