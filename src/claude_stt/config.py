@@ -40,7 +40,7 @@ class Config:
     # Audio settings
     sample_rate: int = 16000
     max_recording_seconds: int = 300  # 5 minutes
-    min_recording_seconds: float = 0.8   # ignore recordings shorter than this
+    min_recording_seconds: float = 0.4   # ignore recordings shorter than this
     min_audio_db: float = -55.0           # ignore recordings quieter than this
     audio_device: str | int | None = None  # None = system default
 
