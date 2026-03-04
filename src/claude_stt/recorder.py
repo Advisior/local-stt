@@ -4,6 +4,7 @@ import logging
 import math
 import queue
 import threading
+import time
 from collections import deque
 from dataclasses import dataclass
 from typing import Deque, Generator, Optional
@@ -136,6 +137,12 @@ class AudioRecorder:
                 callback=callback,
             )
             self._stream.start()
+            # Allow PortAudio hardware buffer to fill before capturing.
+            # Without this, the first ~150ms of audio is all zeros
+            # (-131 dB), causing the recording to be silently discarded.
+            time.sleep(0.15)
+            with self._lock:
+                self._recorded_chunks.clear()
             self._recording = True
             return True
 
