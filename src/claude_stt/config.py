@@ -45,7 +45,7 @@ class Config:
     audio_device: str | int | None = None  # None = system default
 
     # Output settings
-    output_mode: Literal["injection", "clipboard", "auto"] = "auto"
+    output_mode: Literal["injection", "clipboard", "clipboard_paste", "auto"] = "auto"
 
     # Feedback settings
     sound_effects: bool = True
@@ -235,7 +235,7 @@ class Config:
             logger.warning("Invalid whisper_model; defaulting to 'medium'")
             self.whisper_model = "medium"
 
-        if self.output_mode not in ("injection", "clipboard", "auto"):
+        if self.output_mode not in ("injection", "clipboard", "clipboard_paste", "auto"):
             logger.warning("Invalid output_mode '%s'; defaulting to 'auto'", self.output_mode)
             self.output_mode = "auto"
 
