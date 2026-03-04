@@ -14,10 +14,6 @@ struct HistoryView: View {
 
     @State private var entries: [HistoryEntry] = []
     private let refreshTimer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
-    @State private var selectedWord: String = ""
-    @State private var correctionText: String = ""
-    @State private var correctionEntryId: UUID? = nil
-    @State private var correctionWordIndex: Int = -1
 
     var body: some View {
         VStack(spacing: 0) {
@@ -46,14 +42,8 @@ struct HistoryView: View {
                             EntryCard(
                                 entry: entry,
                                 corrections: config.corrections,
-                                correctionEntryId: $correctionEntryId,
-                                correctionWordIndex: $correctionWordIndex,
-                                correctionText: $correctionText,
-                                selectedWord: $selectedWord,
                                 onSaveCorrection: { wrong, right in
                                     config.addCorrection(wrong: wrong, right: right)
-                                    correctionEntryId = nil
-                                    correctionWordIndex = -1
                                 }
                             )
                         }
@@ -87,13 +77,61 @@ struct HistoryView: View {
     }
 }
 
+struct WordToken: View {
+    let word: String
+    let cleanWord: String
+    let isCorrected: Bool
+    let corrections: [String: String]
+    var onSave: (String, String) -> Void
+
+    @State private var showPopover = false
+    @State private var correctionText: String = ""
+
+    var body: some View {
+        Button(action: {
+            correctionText = corrections[cleanWord] ?? cleanWord
+            showPopover = true
+        }) {
+            Text(word)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(
+                    isCorrected ? Color.orange.opacity(0.2) :
+                    Color.secondary.opacity(0.08)
+                )
+                .foregroundColor(isCorrected ? .orange : .primary)
+                .cornerRadius(4)
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: $showPopover, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Correct \"\(cleanWord)\"")
+                    .font(.headline)
+                HStack(spacing: 8) {
+                    TextField("Correction", text: $correctionText)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 180)
+                        .onSubmit {
+                            onSave(cleanWord, correctionText)
+                            showPopover = false
+                        }
+                    Button("Save") {
+                        onSave(cleanWord, correctionText)
+                        showPopover = false
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
+                .padding(.bottom, 2)
+            }
+            .padding(14)
+        }
+    }
+}
+
 struct EntryCard: View {
     let entry: HistoryEntry
     let corrections: [String: String]
-    @Binding var correctionEntryId: UUID?
-    @Binding var correctionWordIndex: Int
-    @Binding var correctionText: String
-    @Binding var selectedWord: String
     var onSaveCorrection: (String, String) -> Void
 
     private var words: [String] {
@@ -112,66 +150,20 @@ struct EntryCard: View {
                     .foregroundColor(.secondary)
             }
 
-            // Words as clickable tokens
+            // Words as clickable tokens — each manages its own popover
             FlowLayout(spacing: 4) {
                 ForEach(Array(words.enumerated()), id: \.offset) { index, word in
                     let cleanWord = word.trimmingCharacters(in: .punctuationCharacters)
                     let isCorrected = corrections[cleanWord] != nil
-                    let isSelected = correctionEntryId == entry.id && correctionWordIndex == index
 
-                    Button(action: {
-                        if isSelected {
-                            correctionEntryId = nil
-                            correctionWordIndex = -1
-                        } else {
-                            selectedWord = cleanWord
-                            correctionText = corrections[cleanWord] ?? cleanWord
-                            correctionEntryId = entry.id
-                            correctionWordIndex = index
-                        }
-                    }) {
-                        Text(word)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 2)
-                            .background(
-                                isCorrected ? Color.orange.opacity(0.2) :
-                                isSelected ? Color.accentColor.opacity(0.15) :
-                                Color.secondary.opacity(0.08)
-                            )
-                            .foregroundColor(isCorrected ? .orange : .primary)
-                            .cornerRadius(4)
-                    }
-                    .buttonStyle(.plain)
+                    WordToken(
+                        word: word,
+                        cleanWord: cleanWord,
+                        isCorrected: isCorrected,
+                        corrections: corrections,
+                        onSave: onSaveCorrection
+                    )
                 }
-            }
-
-            // Inline correction input (shown when word is selected in this entry)
-            if correctionEntryId == entry.id && correctionWordIndex >= 0 {
-                HStack(spacing: 8) {
-                    Text("\"\(selectedWord)\"")
-                        .foregroundColor(.secondary)
-                    Image(systemName: "arrow.right")
-                        .foregroundColor(.secondary)
-                    TextField("Correction", text: $correctionText)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 160)
-                        .onSubmit {
-                            onSaveCorrection(selectedWord, correctionText)
-                        }
-                    Button("Save") {
-                        onSaveCorrection(selectedWord, correctionText)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    Button("Cancel") {
-                        correctionEntryId = nil
-                        correctionWordIndex = -1
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundColor(.secondary)
-                    .controlSize(.small)
-                }
-                .padding(.top, 4)
             }
         }
         .padding(10)
