@@ -180,7 +180,19 @@ class STTDaemon:
 
         rms = np.sqrt(np.mean(audio**2))
         db = 20 * np.log10(max(rms, 1e-10))
+        duration_s = len(audio) / self.config.sample_rate
         if db < self.config.min_audio_db:
+            # Short + quiet = mic wakeup artifact, not a real recording.
+            # Auto-restart recording so the user can just keep talking.
+            if duration_s < 1.5:
+                self._logger.info(
+                    "Mic wakeup artifact (%.1fs, %.1f dB) — auto-restarting recording",
+                    duration_s, db,
+                )
+                # Re-trigger recording start on a short delay
+                import threading
+                threading.Timer(0.1, self._on_recording_start).start()
+                return
             self._logger.info(
                 "Skipping: audio too quiet (%.1f dB < %.1f dB threshold)",
                 db, self.config.min_audio_db,
@@ -329,6 +341,7 @@ class STTDaemon:
                 audio = self._recorder.stop()
             window_info = self._original_window
 
+            self._last_stop_time = time.time()
             self._logger.info("Recording stopped (%.1fs)", elapsed)
             if self.config.sound_effects:
                 play_sound("stop")

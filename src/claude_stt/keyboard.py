@@ -128,6 +128,14 @@ def test_injection() -> bool:
         return cache_result(False)
 
 
+def _normalize_text(text: str) -> str:
+    """Ensure text ends with a sentence-ending punctuation mark and a space."""
+    text = text.rstrip()
+    if text and text[-1] not in ".!?:;":
+        text += "."
+    return text + " "
+
+
 def output_text(
     text: str,
     window_info: Optional[WindowInfo] = None,
@@ -145,6 +153,8 @@ def output_text(
     """
     if config is None:
         config = Config.load().validate()
+
+    text = _normalize_text(text)
 
     # Determine output mode
     mode = config.output_mode
@@ -192,7 +202,7 @@ def _output_via_injection(
 
         # Type the text with trailing space for consecutive dictations
         kb = get_keyboard()
-        kb.type(text + " ")
+        kb.type(text)
 
         if config.sound_effects:
             play_sound("complete")
@@ -223,7 +233,7 @@ def _output_via_clipboard_paste(text: str, config: Config) -> bool:
         except Exception:
             previous = None
 
-        pyperclip.copy(text + " ")
+        pyperclip.copy(text)
         time.sleep(0.05)  # let clipboard settle
 
         if _PYNPUT_AVAILABLE:

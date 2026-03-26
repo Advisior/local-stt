@@ -152,6 +152,30 @@ class AudioRecorder:
         self._logger.debug("Audio stream pre-warmed")
         return True
 
+    def refresh(self) -> bool:
+        """Close and reopen the audio stream to keep the mic active.
+
+        macOS puts the microphone into a low-power state after inactivity,
+        even when the PortAudio stream is technically open. This forces a
+        fresh hardware connection.
+
+        Returns:
+            True if the stream was refreshed successfully.
+        """
+        if self._recording:
+            return False  # Don't interrupt an active recording
+        # Close existing stream
+        if self._stream is not None:
+            try:
+                self._stream.stop()
+                self._stream.close()
+            except Exception:
+                self._logger.debug("Failed to close stream during refresh", exc_info=True)
+            self._stream = None
+            self._stream_warm = False
+        # Reopen
+        return self.prewarm()
+
     def start(self) -> bool:
         """Start recording audio.
 

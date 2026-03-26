@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct HistoryEntry: Identifiable {
-    let id = UUID()
+    var id: String { timestamp + text.prefix(40) }
     let timestamp: String
     let text: String
     let durationS: Double
@@ -13,6 +13,7 @@ struct HistoryView: View {
     var onDismiss: () -> Void
 
     @State private var entries: [HistoryEntry] = []
+    @State private var pauseRefresh = false
     private let refreshTimer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -42,6 +43,7 @@ struct HistoryView: View {
                             EntryCard(
                                 entry: entry,
                                 corrections: config.corrections,
+                                pauseRefresh: $pauseRefresh,
                                 onSaveCorrection: { wrong, right in
                                     config.addCorrection(wrong: wrong, right: right)
                                 }
@@ -54,14 +56,14 @@ struct HistoryView: View {
         }
         .frame(width: 560, height: 480)
         .onAppear { loadHistory() }
-        .onReceive(refreshTimer) { _ in loadHistory() }
+        .onReceive(refreshTimer) { _ in if !pauseRefresh { loadHistory() } }
     }
 
     private func loadHistory() {
         let historyURL = ConfigManager.configDir.appendingPathComponent("history.jsonl")
         guard let content = try? String(contentsOf: historyURL) else { return }
         let lines = content.split(separator: "\n", omittingEmptySubsequences: true)
-        entries = lines.compactMap { line -> HistoryEntry? in
+        let newEntries: [HistoryEntry] = lines.compactMap { line -> HistoryEntry? in
             guard let data = line.data(using: .utf8),
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let text = json["text"] as? String,
@@ -74,6 +76,10 @@ struct HistoryView: View {
                 db: json["db"] as? Double ?? 0
             )
         }.reversed()
+        // Only update if data actually changed — avoids resetting scroll position
+        if newEntries.map(\.id) != entries.map(\.id) {
+            entries = newEntries
+        }
     }
 }
 
@@ -82,6 +88,7 @@ struct WordToken: View {
     let cleanWord: String
     let isCorrected: Bool
     let corrections: [String: String]
+    @Binding var pauseRefresh: Bool
     var onSave: (String, String) -> Void
 
     @State private var showPopover = false
@@ -91,6 +98,7 @@ struct WordToken: View {
         Button(action: {
             correctionText = corrections[cleanWord] ?? cleanWord
             showPopover = true
+            pauseRefresh = true
         }) {
             Text(word)
                 .padding(.horizontal, 5)
@@ -103,7 +111,13 @@ struct WordToken: View {
                 .cornerRadius(4)
         }
         .buttonStyle(.plain)
-        .popover(isPresented: $showPopover, arrowEdge: .bottom) {
+        .popover(isPresented: Binding(
+            get: { showPopover },
+            set: { newValue in
+                showPopover = newValue
+                if !newValue { pauseRefresh = false }
+            }
+        ), arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Correct \"\(cleanWord)\"")
                     .font(.headline)
@@ -114,10 +128,12 @@ struct WordToken: View {
                         .onSubmit {
                             onSave(cleanWord, correctionText)
                             showPopover = false
+                            pauseRefresh = false
                         }
                     Button("Save") {
                         onSave(cleanWord, correctionText)
                         showPopover = false
+                        pauseRefresh = false
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
@@ -132,6 +148,7 @@ struct WordToken: View {
 struct EntryCard: View {
     let entry: HistoryEntry
     let corrections: [String: String]
+    @Binding var pauseRefresh: Bool
     var onSaveCorrection: (String, String) -> Void
 
     private var words: [String] {
@@ -161,6 +178,7 @@ struct EntryCard: View {
                         cleanWord: cleanWord,
                         isCorrected: isCorrected,
                         corrections: corrections,
+                        pauseRefresh: $pauseRefresh,
                         onSave: onSaveCorrection
                     )
                 }
