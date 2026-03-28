@@ -3,7 +3,7 @@ name = "local-stt"
 version = "0.3.0"
 description = "Free, local, private speech-to-text for macOS. No cloud, no API costs."
 readme = "README.md"
-requires-python = ">=3.11,<3.14"
+requires-python = ">=3.11,<3.15"
 license = "MIT"
 authors = [
     { name = "Jarrod Watts", email = "jarrod@jarrodwatts.com" }
