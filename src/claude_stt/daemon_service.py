@@ -330,10 +330,11 @@ class STTDaemon:
 
             if elapsed < self.config.min_recording_seconds:
                 self._logger.info(
-                    "Skipping: recording too short (%.1fs < %.1fs threshold)",
+                    "Skipping: recording too short (%.1fs < %.1fs threshold) — auto-restarting",
                     elapsed, self.config.min_recording_seconds,
                 )
                 self._overlay_send("CANCEL")
+                threading.Timer(0.3, self._on_recording_start).start()
                 return
 
             # Stop recording
