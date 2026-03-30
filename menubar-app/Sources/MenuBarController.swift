@@ -222,7 +222,7 @@ class MenuBarController: NSObject {
     }
 
     private func onOpenLog() {
-        let logFile = URL(fileURLWithPath: "/tmp/claude-stt.log")
+        let logFile = ConfigManager.configDir.appendingPathComponent("daemon.log")
         if FileManager.default.fileExists(atPath: logFile.path) {
             NSWorkspace.shared.open(logFile)
         }

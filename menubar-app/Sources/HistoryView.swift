@@ -84,64 +84,40 @@ struct HistoryView: View {
 }
 
 struct WordToken: View {
+    let index: Int
     let word: String
     let cleanWord: String
     let isCorrected: Bool
+    let isSelected: Bool
     let corrections: [String: String]
-    @Binding var pauseRefresh: Bool
-    var onSave: (String, String) -> Void
-
-    @State private var showPopover = false
-    @State private var correctionText: String = ""
+    var onTap: (Int) -> Void
 
     var body: some View {
         Button(action: {
-            correctionText = corrections[cleanWord] ?? cleanWord
-            showPopover = true
-            pauseRefresh = true
+            onTap(index)
         }) {
             Text(word)
                 .padding(.horizontal, 5)
                 .padding(.vertical, 2)
                 .background(
+                    isSelected ? Color.blue.opacity(0.3) :
                     isCorrected ? Color.orange.opacity(0.2) :
                     Color.secondary.opacity(0.08)
                 )
-                .foregroundColor(isCorrected ? .orange : .primary)
+                .foregroundColor(
+                    isSelected ? .blue :
+                    isCorrected ? .orange :
+                    .primary
+                )
                 .cornerRadius(4)
+                .overlay(
+                    isSelected ?
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(Color.blue.opacity(0.5), lineWidth: 1) :
+                    nil
+                )
         }
         .buttonStyle(.plain)
-        .popover(isPresented: Binding(
-            get: { showPopover },
-            set: { newValue in
-                showPopover = newValue
-                if !newValue { pauseRefresh = false }
-            }
-        ), arrowEdge: .bottom) {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Correct \"\(cleanWord)\"")
-                    .font(.headline)
-                HStack(spacing: 8) {
-                    TextField("Correction", text: $correctionText)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 180)
-                        .onSubmit {
-                            onSave(cleanWord, correctionText)
-                            showPopover = false
-                            pauseRefresh = false
-                        }
-                    Button("Save") {
-                        onSave(cleanWord, correctionText)
-                        showPopover = false
-                        pauseRefresh = false
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                }
-                .padding(.bottom, 2)
-            }
-            .padding(14)
-        }
     }
 }
 
@@ -151,13 +127,25 @@ struct EntryCard: View {
     @Binding var pauseRefresh: Bool
     var onSaveCorrection: (String, String) -> Void
 
+    @State private var selectedRange: ClosedRange<Int>? = nil
+    @State private var showPopover = false
+    @State private var correctionText: String = ""
+    @State private var popoverAnchorIndex: Int = 0
+    @State private var copied = false
+
     private var words: [String] {
         entry.text.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
     }
 
+    private var selectedPhrase: String {
+        guard let range = selectedRange else { return "" }
+        let cleanWords = words[range].map { $0.trimmingCharacters(in: .punctuationCharacters) }
+        return cleanWords.joined(separator: " ")
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            // Timestamp + meta
+            // Timestamp + meta + copy button
             HStack(spacing: 8) {
                 Text(entry.timestamp)
                     .font(.caption)
@@ -165,28 +153,137 @@ struct EntryCard: View {
                 Text(String(format: "%.1fs", entry.durationS))
                     .font(.caption)
                     .foregroundColor(.secondary)
+                if let range = selectedRange {
+                    if range.count > 1 {
+                        Text("\(range.count) words — tap selection to correct")
+                            .font(.caption)
+                            .foregroundColor(.blue)
+                    } else {
+                        Text("tap another word to extend, or tap again to correct")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Button(action: { selectedRange = nil }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.secondary)
+                            .font(.caption)
+                    }
+                    .buttonStyle(.plain)
+                }
+                Spacer()
+                Button(action: {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(entry.text, forType: .string)
+                    copied = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                        copied = false
+                    }
+                }) {
+                    HStack(spacing: 3) {
+                        Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                        if copied {
+                            Text("Copied")
+                                .font(.caption2)
+                        }
+                    }
+                    .foregroundColor(copied ? .green : .secondary)
+                    .font(.caption)
+                }
+                .buttonStyle(.plain)
             }
 
-            // Words as clickable tokens — each manages its own popover
+            // Words as clickable tokens
             FlowLayout(spacing: 4) {
                 ForEach(Array(words.enumerated()), id: \.offset) { index, word in
                     let cleanWord = word.trimmingCharacters(in: .punctuationCharacters)
                     let isCorrected = corrections[cleanWord] != nil
+                    let isSelected = selectedRange?.contains(index) ?? false
 
                     WordToken(
+                        index: index,
                         word: word,
                         cleanWord: cleanWord,
                         isCorrected: isCorrected,
+                        isSelected: isSelected,
                         corrections: corrections,
-                        pauseRefresh: $pauseRefresh,
-                        onSave: onSaveCorrection
+                        onTap: { tappedIndex in
+                            handleWordTap(index: tappedIndex)
+                        }
                     )
+                    .popover(isPresented: Binding(
+                        get: { showPopover && popoverAnchorIndex == index },
+                        set: { newValue in
+                            if !newValue {
+                                showPopover = false
+                                selectedRange = nil
+                                pauseRefresh = false
+                            }
+                        }
+                    ), arrowEdge: .bottom) {
+                        popoverContent
+                    }
                 }
             }
         }
         .padding(10)
         .background(Color(NSColor.controlBackgroundColor))
         .cornerRadius(8)
+    }
+
+    private var popoverContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Correct \"\(selectedPhrase)\"")
+                .font(.headline)
+            HStack(spacing: 8) {
+                TextField("Correction", text: $correctionText)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 220)
+                    .onSubmit { saveCorrection() }
+                Button("Save") { saveCorrection() }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+            }
+            .padding(.bottom, 2)
+        }
+        .padding(14)
+    }
+
+    private func handleWordTap(index: Int) {
+        if let existing = selectedRange {
+            if existing.contains(index) && !showPopover {
+                // Tapped inside selection → open popover
+                openPopover(anchorIndex: index)
+            } else if !showPopover {
+                // Extend selection to include tapped word
+                let newStart = min(existing.lowerBound, index)
+                let newEnd = max(existing.upperBound, index)
+                selectedRange = newStart...newEnd
+            } else {
+                // Popover is open, tapped outside → new selection
+                showPopover = false
+                selectedRange = index...index
+            }
+        } else {
+            // No selection yet → select this word
+            selectedRange = index...index
+        }
+    }
+
+    private func openPopover(anchorIndex: Int) {
+        let phrase = selectedPhrase
+        // Check if the whole phrase has an existing correction
+        correctionText = corrections[phrase] ?? phrase
+        popoverAnchorIndex = anchorIndex
+        showPopover = true
+        pauseRefresh = true
+    }
+
+    private func saveCorrection() {
+        let phrase = selectedPhrase
+        onSaveCorrection(phrase, correctionText)
+        showPopover = false
+        selectedRange = nil
+        pauseRefresh = false
     }
 }
 

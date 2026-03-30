@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-03-30
+
+### Added
+- Multi-word correction in History: click first word, click last word to extend selection, click selection to open correction popup
+- Copy button on each History entry to copy full transcription to clipboard
+- Auto-restart recording when first F1 press is too short (mic wakeup delay)
+
+### Fixed
+- "Open Log" menu item now opens the correct log file instead of a non-existent path
+- Recording no longer silently fails on first press due to mic wakeup artifacts
+
 ## [0.3.0] - 2026-03-04
 
 ### Added
