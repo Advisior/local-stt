@@ -14,7 +14,13 @@ struct HistoryView: View {
 
     @State private var entries: [HistoryEntry] = []
     @State private var pauseRefresh = false
+    @State private var searchText: String = ""
     private let refreshTimer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
+
+    private var filteredEntries: [HistoryEntry] {
+        guard !searchText.isEmpty else { return entries }
+        return entries.filter { $0.text.localizedCaseInsensitiveContains(searchText) }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -29,6 +35,33 @@ struct HistoryView: View {
             }
             .padding()
 
+            // Search
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(.secondary)
+                    .font(.caption)
+                TextField("Search transcriptions...", text: $searchText)
+                    .textFieldStyle(.plain)
+                    .font(.body)
+                if !searchText.isEmpty {
+                    Button(action: { searchText = "" }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.secondary)
+                            .font(.caption)
+                    }
+                    .buttonStyle(.plain)
+                    Text("\(filteredEntries.count)/\(entries.count)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 6)
+            .background(Color(NSColor.textBackgroundColor))
+            .cornerRadius(6)
+            .padding(.horizontal)
+            .padding(.bottom, 8)
+
             Divider()
 
             if entries.isEmpty {
@@ -36,13 +69,19 @@ struct HistoryView: View {
                 Text("No transcriptions yet.")
                     .foregroundColor(.secondary)
                 Spacer()
+            } else if filteredEntries.isEmpty {
+                Spacer()
+                Text("No matches for \"\(searchText)\"")
+                    .foregroundColor(.secondary)
+                Spacer()
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 8) {
-                        ForEach(entries) { entry in
+                        ForEach(filteredEntries) { entry in
                             EntryCard(
                                 entry: entry,
                                 corrections: config.corrections,
+                                searchHighlight: searchText,
                                 pauseRefresh: $pauseRefresh,
                                 onSaveCorrection: { wrong, right in
                                     config.addCorrection(wrong: wrong, right: right)
@@ -89,32 +128,38 @@ struct WordToken: View {
     let cleanWord: String
     let isCorrected: Bool
     let isSelected: Bool
+    let isSearchMatch: Bool
     let corrections: [String: String]
     var onTap: (Int) -> Void
 
+    private var bgColor: Color {
+        if isSelected { return Color.blue.opacity(0.3) }
+        if isSearchMatch { return Color.yellow.opacity(0.35) }
+        if isCorrected { return Color.orange.opacity(0.2) }
+        return Color.secondary.opacity(0.08)
+    }
+
+    private var fgColor: Color {
+        if isSelected { return .blue }
+        if isCorrected { return .orange }
+        return .primary
+    }
+
+    private var showBorder: Bool { isSelected || isSearchMatch }
+    private var borderColor: Color { isSelected ? Color.blue.opacity(0.5) : Color.yellow.opacity(0.6) }
+
     var body: some View {
-        Button(action: {
-            onTap(index)
-        }) {
+        Button(action: { onTap(index) }) {
             Text(word)
                 .padding(.horizontal, 5)
                 .padding(.vertical, 2)
-                .background(
-                    isSelected ? Color.blue.opacity(0.3) :
-                    isCorrected ? Color.orange.opacity(0.2) :
-                    Color.secondary.opacity(0.08)
-                )
-                .foregroundColor(
-                    isSelected ? .blue :
-                    isCorrected ? .orange :
-                    .primary
-                )
+                .background(bgColor)
+                .foregroundColor(fgColor)
                 .cornerRadius(4)
                 .overlay(
-                    isSelected ?
-                    RoundedRectangle(cornerRadius: 4)
-                        .stroke(Color.blue.opacity(0.5), lineWidth: 1) :
-                    nil
+                    showBorder
+                        ? RoundedRectangle(cornerRadius: 4).stroke(borderColor, lineWidth: 1)
+                        : nil
                 )
         }
         .buttonStyle(.plain)
@@ -124,6 +169,7 @@ struct WordToken: View {
 struct EntryCard: View {
     let entry: HistoryEntry
     let corrections: [String: String]
+    var searchHighlight: String = ""
     @Binding var pauseRefresh: Bool
     var onSaveCorrection: (String, String) -> Void
 
@@ -198,6 +244,7 @@ struct EntryCard: View {
                     let cleanWord = word.trimmingCharacters(in: .punctuationCharacters)
                     let isCorrected = corrections[cleanWord] != nil
                     let isSelected = selectedRange?.contains(index) ?? false
+                    let isSearchMatch = !searchHighlight.isEmpty && word.localizedCaseInsensitiveContains(searchHighlight)
 
                     WordToken(
                         index: index,
@@ -205,6 +252,7 @@ struct EntryCard: View {
                         cleanWord: cleanWord,
                         isCorrected: isCorrected,
                         isSelected: isSelected,
+                        isSearchMatch: isSearchMatch,
                         corrections: corrections,
                         onTap: { tappedIndex in
                             handleWordTap(index: tappedIndex)

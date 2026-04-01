@@ -11,6 +11,7 @@ class ConfigManager: ObservableObject {
     @Published var autoStartDaemon: Bool = true
     @Published var corrections: [String: String] = [:]
     @Published var muteOnRecord: Bool = false
+    @Published var outputMode: String = "auto"
 
     // Read-only display
     @Published var engine: String = "moonshine"
@@ -126,6 +127,7 @@ class ConfigManager: ObservableObject {
             case "sound_effects": soundEffects = (value == "true")
             case "auto_start_daemon": autoStartDaemon = (value == "true")
             case "mute_on_record": muteOnRecord = (value == "true")
+            case "output_mode": outputMode = value
             default: break
             }
         }
@@ -201,7 +203,7 @@ class ConfigManager: ObservableObject {
         lines.append("whisper_model = \"\(escape(whisperModel))\"")
         lines.append("sample_rate = 16000")
         lines.append("max_recording_seconds = 300")
-        lines.append("output_mode = \"auto\"")
+        lines.append("output_mode = \"\(escape(outputMode))\"")
         lines.append("sound_effects = \(soundEffects)")
         lines.append("auto_start_daemon = \(autoStartDaemon)")
         lines.append("mute_on_record = \(muteOnRecord)")
@@ -217,7 +219,7 @@ class ConfigManager: ObservableObject {
             lines.append("")
             lines.append("[corrections]")
             for (wrong, right) in corrections.sorted(by: { $0.key < $1.key }) {
-                lines.append("\(wrong) = \"\(escape(right))\"")
+                lines.append("\"\(escape(wrong))\" = \"\(escape(right))\"")
             }
         }
 

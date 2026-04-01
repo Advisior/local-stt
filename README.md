@@ -27,6 +27,7 @@ Free, local, private speech-to-text for your Mac. No cloud, no API costs, no dat
 | 🎛️ | **Settings UI** | Native SwiftUI settings with hotkey recorder, engine picker, vocabulary editor |
 | 🔊 | **Sound Feedback** | Audio cues for recording start/stop |
 | 📝 | **Custom Vocabulary** | Add domain-specific terms to improve recognition accuracy |
+| 🔍 | **Transcript History** | Searchable history with inline word correction and clipboard copy |
 
 ---
 

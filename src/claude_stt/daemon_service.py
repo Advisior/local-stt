@@ -216,6 +216,7 @@ class STTDaemon:
             self._overlay_send("CANCEL")
             return
 
+        self.config.reload_corrections()
         text = fix_transcription_errors(text, self.config.corrections)
         text = format_paragraphs(text)
 
