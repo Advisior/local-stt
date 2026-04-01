@@ -56,6 +56,23 @@ class Config:
     initial_prompt: str | None = None
     corrections: dict = field(default_factory=dict)
 
+    def reload_corrections(self) -> None:
+        """Hot-reload only the [corrections] section from config.toml."""
+        try:
+            import tomli
+        except ImportError:
+            return
+        config_dir = self.get_config_dir()
+        config_path = config_dir / "config.toml"
+        if not config_path.exists():
+            return
+        try:
+            with open(config_path, "rb") as f:
+                data = tomli.load(f)
+            self.corrections = {str(k): str(v) for k, v in data.get("corrections", {}).items()}
+        except Exception:
+            pass
+
     @classmethod
     def get_config_dir(cls) -> Path:
         """Get the configuration directory path."""

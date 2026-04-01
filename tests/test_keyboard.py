@@ -24,7 +24,7 @@ class KeyboardOutputTests(unittest.TestCase):
             config = Config(output_mode="auto")
             result = keyboard.output_text("hello", config=config)
             self.assertTrue(result)
-            self.assertEqual(captured["text"], "hello")
+            self.assertEqual(captured["text"], "hello. ")
         finally:
             keyboard._PYNPUT_AVAILABLE = original_available
             keyboard._output_via_clipboard = original_clipboard

@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-04-01
+
+### Added
+- Search/filter in transcript history: live text search with match counter and yellow word highlighting (#16)
+- Hot-reload corrections: user-defined corrections now apply immediately without daemon restart (#17)
+
+### Fixed
+- `output_mode` setting no longer reset to "auto" when saving corrections in the UI (#18)
+- TOML correction keys with non-ASCII characters (e.g. umlauts) now properly quoted (#18)
+
 ## [0.4.0] - 2026-03-30
 
 ### Added
