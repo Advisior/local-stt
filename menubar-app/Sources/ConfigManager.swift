@@ -112,7 +112,7 @@ class ConfigManager: ObservableObject {
             let value = unquote(raw)
 
             if currentSection == "corrections" {
-                loadedCorrections[key] = value
+                loadedCorrections[unquote(key)] = value
                 continue
             }
 
@@ -251,8 +251,11 @@ class ConfigManager: ObservableObject {
         return v
     }
 
+    /// Escape a string value for TOML (inside double quotes).
+    /// Only backslashes and literal double-quotes inside the value need escaping.
     private func escape(_ s: String) -> String {
         s.replacingOccurrences(of: "\\", with: "\\\\")
          .replacingOccurrences(of: "\"", with: "\\\"")
     }
+
 }
