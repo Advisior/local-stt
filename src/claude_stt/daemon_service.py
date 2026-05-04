@@ -357,7 +357,14 @@ class STTDaemon:
                 self._logger.warning("Dropping transcription; queue is full")
                 self._overlay_send("CANCEL")
         else:
-            # No audio captured — cancel the transcribing indicator
+            # No audio captured — common cause: wrong default input device,
+            # disconnected mic, or PaMacCore stream error. Logged so the
+            # user can spot input-routing issues without UI silence.
+            self._logger.warning(
+                "No audio captured from recorder (recording was %.1fs); "
+                "check default input device",
+                self._last_duration_s,
+            )
             self._overlay_send("CANCEL")
             if self.config.sound_effects:
                 play_sound("warning")

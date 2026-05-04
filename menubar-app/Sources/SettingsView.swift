@@ -120,6 +120,7 @@ private struct GeneralTab: View {
                     LabeledContent("Engine") {
                         Picker("", selection: $config.engine) {
                             Text("MLX Whisper").tag("mlx")
+                            Text("Parakeet TDT").tag("parakeet")
                             Text("Whisper").tag("whisper")
                             Text("Moonshine").tag("moonshine")
                         }
@@ -135,13 +136,14 @@ private struct GeneralTab: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     LabeledContent("Model") {
-                        Picker("", selection: config.engine == "moonshine"
-                            ? $config.moonshineModel
-                            : $config.whisperModel
-                        ) {
+                        Picker("", selection: modelBinding) {
                             if config.engine == "moonshine" {
                                 Text("Tiny").tag("moonshine/tiny")
                                 Text("Base").tag("moonshine/base")
+                            } else if config.engine == "parakeet" {
+                                Text("TDT 0.6B v3").tag("tdt-0.6b-v3")
+                                Text("TDT 0.6B v2").tag("tdt-0.6b-v2")
+                                Text("TDT 1.1B").tag("tdt-1.1b")
                             } else {
                                 Text("Tiny").tag("tiny")
                                 Text("Base").tag("base")
@@ -201,6 +203,14 @@ private struct GeneralTab: View {
             }
         }
         return machine?.contains("arm64") == true
+    }
+
+    private var modelBinding: Binding<String> {
+        switch config.engine {
+        case "moonshine": return $config.moonshineModel
+        case "parakeet": return $config.parakeetModel
+        default: return $config.whisperModel
+        }
     }
 }
 

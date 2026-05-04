@@ -33,9 +33,10 @@ class Config:
     mode: Literal["push-to-talk", "toggle"] = "toggle"
 
     # Engine settings
-    engine: Literal["moonshine", "whisper"] = "moonshine"
+    engine: Literal["moonshine", "whisper", "mlx", "parakeet"] = "moonshine"
     moonshine_model: str = "moonshine/base"
     whisper_model: str = "medium"
+    parakeet_model: str = "tdt-0.6b-v3"
 
     # Audio settings
     sample_rate: int = 16000
@@ -128,6 +129,7 @@ class Config:
                 engine=stt_config.get("engine", cls.engine),
                 moonshine_model=stt_config.get("moonshine_model", cls.moonshine_model),
                 whisper_model=stt_config.get("whisper_model", cls.whisper_model),
+                parakeet_model=stt_config.get("parakeet_model", cls.parakeet_model),
                 sample_rate=stt_config.get("sample_rate", cls.sample_rate),
                 max_recording_seconds=stt_config.get(
                     "max_recording_seconds", cls.max_recording_seconds
@@ -172,6 +174,7 @@ class Config:
             "engine": self.engine,
             "moonshine_model": self.moonshine_model,
             "whisper_model": self.whisper_model,
+            "parakeet_model": self.parakeet_model,
             "sample_rate": self.sample_rate,
             "max_recording_seconds": self.max_recording_seconds,
             "min_recording_seconds": self.min_recording_seconds,
@@ -235,9 +238,13 @@ class Config:
             logger.warning("Invalid mode '%s'; defaulting to 'toggle'", self.mode)
             self.mode = "toggle"
 
-        if self.engine not in ("moonshine", "whisper", "mlx"):
+        if self.engine not in ("moonshine", "whisper", "mlx", "parakeet"):
             logger.warning("Invalid engine '%s'; defaulting to 'moonshine'", self.engine)
             self.engine = "moonshine"
+
+        if not isinstance(self.parakeet_model, str) or not self.parakeet_model.strip():
+            logger.warning("Invalid parakeet_model; defaulting to 'tdt-0.6b-v3'")
+            self.parakeet_model = "tdt-0.6b-v3"
 
         if not isinstance(self.moonshine_model, str) or not self.moonshine_model.strip():
             logger.warning("Invalid moonshine_model; defaulting to 'moonshine/base'")

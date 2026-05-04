@@ -22,6 +22,7 @@ dependencies = [
 
 [project.optional-dependencies]
 whisper = ["faster-whisper>=1.0"]
+parakeet = ["parakeet-mlx>=0.5"]
 macos = ["pyobjc-framework-Cocoa"]
 menubar = ["rumps>=0.4"]
 windows = ["pywin32"]
