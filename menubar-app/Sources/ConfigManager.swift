@@ -17,6 +17,7 @@ class ConfigManager: ObservableObject {
     @Published var engine: String = "moonshine"
     @Published var whisperModel: String = "medium"
     @Published var moonshineModel: String = "moonshine/base"
+    @Published var parakeetModel: String = "tdt-0.6b-v3"
 
     static var configDir: URL {
         if let override = ProcessInfo.processInfo.environment["LOCAL_STT_CONFIG_DIR"]
@@ -78,6 +79,7 @@ class ConfigManager: ObservableObject {
         switch engine {
         case "mlx": return "mlx (\(whisperModel))"
         case "whisper": return "whisper (\(whisperModel))"
+        case "parakeet": return "parakeet (\(parakeetModel))"
         default: return "moonshine (\(moonshineModel))"
         }
     }
@@ -122,6 +124,7 @@ class ConfigManager: ObservableObject {
             case "engine": engine = value
             case "whisper_model": whisperModel = value
             case "moonshine_model": moonshineModel = value
+            case "parakeet_model": parakeetModel = value
             case "language": language = value
             case "initial_prompt": initialPrompt = value
             case "sound_effects": soundEffects = (value == "true")
@@ -137,7 +140,7 @@ class ConfigManager: ObservableObject {
 
     // MARK: - Validation
 
-    private static let validEngines = ["mlx", "whisper", "moonshine"]
+    private static let validEngines = ["mlx", "whisper", "moonshine", "parakeet"]
     private static let validModes = ["push-to-talk", "toggle"]
     private static let maxInitialPromptLength = 1000
 
@@ -201,6 +204,7 @@ class ConfigManager: ObservableObject {
         lines.append("engine = \"\(engine)\"")
         lines.append("moonshine_model = \"\(escape(moonshineModel))\"")
         lines.append("whisper_model = \"\(escape(whisperModel))\"")
+        lines.append("parakeet_model = \"\(escape(parakeetModel))\"")
         lines.append("sample_rate = 16000")
         lines.append("max_recording_seconds = 300")
         lines.append("output_mode = \"\(escape(outputMode))\"")

@@ -4,6 +4,7 @@ from .config import Config
 from .engines import STTEngine
 from .engines.mlx_engine import MLXWhisperEngine
 from .engines.moonshine import MoonshineEngine
+from .engines.parakeet_engine import ParakeetEngine
 from .engines.whisper import WhisperEngine
 from .errors import EngineError
 
@@ -24,4 +25,6 @@ def build_engine(config: Config) -> STTEngine:
             language=config.language,
             initial_prompt=config.initial_prompt,
         )
+    if config.engine == "parakeet":
+        return ParakeetEngine(model_name=config.parakeet_model)
     raise EngineError(f"Unknown engine '{config.engine}'")
