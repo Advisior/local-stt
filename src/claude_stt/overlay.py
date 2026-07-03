@@ -248,14 +248,21 @@ def _cgcolor(r, g, b, a):
 
 
 def _read_stdin(overlay):
-    """Read commands from stdin in background thread."""
+    """Read commands from stdin in background thread.
+
+    Always terminates the app when the loop ends, whether via an explicit
+    QUIT command, an EOF (stdin closed because the parent process died,
+    cleanly or not), or a read error. Without this, a parent crash leaves
+    the overlay window stuck on screen forever (stdin EOF ends the `for`
+    loop normally, without raising, so a bare except-based exit is not
+    enough).
+    """
     try:
         for line in sys.stdin:
             cmd = line.strip()
             if not cmd:
                 continue
             if cmd == "QUIT":
-                _perform_on_main(lambda: AppKit.NSApp.terminate_(None))
                 break
             elif cmd == "RECORDING":
                 _perform_on_main(overlay.show_recording)
@@ -268,7 +275,8 @@ def _read_stdin(overlay):
             elif cmd == "CANCEL":
                 _perform_on_main(overlay.cancel)
     except (EOFError, OSError):
-        _perform_on_main(lambda: AppKit.NSApp.terminate_(None))
+        pass
+    _perform_on_main(lambda: AppKit.NSApp.terminate_(None))
 
 
 def main():
