@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-07-15
+
+### Fixed
+- `clipboard_paste` no longer destroys images or files in the clipboard: the full NSPasteboard (all items and types) is snapshotted before the transcript is written and restored after the paste keystroke has been consumed. Previously the save/restore used text-only pyperclip, so a copied screenshot was silently lost on every dictation (#25)
+
 ## [0.5.0] - 2026-04-01
 
 ### Added
