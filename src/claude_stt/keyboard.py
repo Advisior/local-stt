@@ -214,6 +214,51 @@ def _output_via_injection(
         return _output_via_clipboard(text, config)
 
 
+def _snapshot_pasteboard() -> Optional[list]:
+    """Snapshot all items and types on the general pasteboard.
+
+    pyperclip is text-only: with an image on the clipboard it reads back an
+    empty string, so a text-based save/restore silently destroys images,
+    files and rich text. NSPasteboard preserves everything.
+    """
+    try:
+        from AppKit import NSPasteboard
+
+        pb = NSPasteboard.generalPasteboard()
+        items = []
+        for item in pb.pasteboardItems() or []:
+            entry = {}
+            for t in item.types() or []:
+                data = item.dataForType_(t)
+                if data is not None:
+                    entry[str(t)] = data
+            if entry:
+                items.append(entry)
+        return items
+    except Exception:
+        _logger.debug("Pasteboard snapshot failed", exc_info=True)
+        return None
+
+
+def _restore_pasteboard(items: list) -> bool:
+    """Write a pasteboard snapshot back to the general pasteboard."""
+    try:
+        from AppKit import NSPasteboard, NSPasteboardItem
+
+        pb = NSPasteboard.generalPasteboard()
+        new_items = []
+        for entry in items:
+            pi = NSPasteboardItem.alloc().init()
+            for t, data in entry.items():
+                pi.setData_forType_(data, t)
+            new_items.append(pi)
+        pb.clearContents()
+        return bool(pb.writeObjects_(new_items))
+    except Exception:
+        _logger.debug("Pasteboard restore failed", exc_info=True)
+        return False
+
+
 def _output_via_clipboard_paste(text: str, config: Config) -> bool:
     """Output text via clipboard and Cmd+V paste (macOS).
 
@@ -227,29 +272,28 @@ def _output_via_clipboard_paste(text: str, config: Config) -> bool:
             _logger.warning("pyperclip not installed; falling back to injection")
             return _output_via_injection(text, None, config)
 
-        # Save current clipboard content
-        try:
-            previous = pyperclip.paste()
-        except Exception:
-            previous = None
+        # Full pasteboard snapshot (text, images, files) for restore after paste
+        snapshot = _snapshot_pasteboard()
 
         pyperclip.copy(text)
         time.sleep(0.05)  # let clipboard settle
 
+        pasted = False
         if _PYNPUT_AVAILABLE:
             kb = get_keyboard()
             kb.press(Key.cmd)
             kb.press('v')
             kb.release('v')
             kb.release(Key.cmd)
-            time.sleep(0.1)
+            # The frontmost app must consume the paste before the clipboard
+            # is restored; restoring too early pastes the OLD content.
+            time.sleep(0.3)
+            pasted = True
 
-        # Restore previous clipboard
-        if previous is not None:
-            try:
-                pyperclip.copy(previous)
-            except Exception:
-                pass
+        # Without a paste keystroke the transcript must stay in the clipboard
+        # for manual pasting, so only restore after an actual paste.
+        if pasted and snapshot:
+            _restore_pasteboard(snapshot)
 
         if config.sound_effects:
             play_sound("complete")
