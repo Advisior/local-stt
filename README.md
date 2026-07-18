@@ -9,9 +9,12 @@ Free, local, private speech-to-text for your Mac. No cloud, no API costs, no dat
 
 > Hold right CMD, speak, release — text appears at your cursor. Works in any app.
 
-<!-- TODO: Replace with actual screenshots of menu bar app + settings -->
-<!-- ![Local-STT Menu Bar](docs/screenshots/menubar.png) -->
-<!-- ![Local-STT Settings](docs/screenshots/settings.png) -->
+<p align="center">
+  <img src="docs/screenshots/menubar.png" alt="Local-STT menu bar popover" width="320">
+</p>
+<p align="center">
+  <img src="docs/screenshots/settings.png" alt="Local-STT settings window" width="480">
+</p>
 
 ---
 
