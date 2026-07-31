@@ -278,7 +278,7 @@ class HotkeyListener:
                     if not self._is_recording:
                         self._is_recording = True
                         self._enqueue_event("start", self.on_start)
-        # Event suppression is handled by _intercept_event (macOS) via intercept= param
+        # Event suppression is handled by _intercept_event (macOS) via darwin_intercept=
 
     def _on_release(self, key):
         """Handle key release event."""
@@ -296,7 +296,7 @@ class HotkeyListener:
                 if normalized in self._hotkey_keys:
                     self._is_recording = False
                     self._enqueue_event("stop", self.on_stop)
-        # Event suppression is handled by _intercept_event (macOS) via intercept= param
+        # Event suppression is handled by _intercept_event (macOS) via darwin_intercept=
 
     def start(self) -> bool:
         """Start listening for hotkeys.
@@ -314,7 +314,11 @@ class HotkeyListener:
             self._listener = keyboard.Listener(
                 on_press=self._on_press,
                 on_release=self._on_release,
-                intercept=self._intercept_event if platform.system() == "Darwin" else None,
+                # Must be darwin_intercept: pynput only picks up platform
+                # options by their prefix and silently drops a bare
+                # intercept=, so suppression would never run and the hotkey
+                # would also reach the focused app.
+                darwin_intercept=self._intercept_event if platform.system() == "Darwin" else None,
             )
             self._listener.start()
             self._ensure_worker()

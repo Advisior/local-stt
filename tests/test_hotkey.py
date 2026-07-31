@@ -1,6 +1,7 @@
 import queue
 import time
 import unittest
+from unittest import mock
 
 try:
     from pynput import keyboard
@@ -74,6 +75,20 @@ class HotkeyListenerTests(unittest.TestCase):
             HotkeyListener(hotkey="")
         with self.assertRaises(HotkeyError):
             HotkeyListener(hotkey="ctrl+unknownkey")
+
+    def test_macos_suppression_callback_reaches_pynput(self):
+        # pynput silently drops unknown kwargs; only darwin_-prefixed options
+        # reach the macOS backend. A bare intercept= left suppression dead.
+        listener = HotkeyListener(on_start=lambda: None, on_stop=lambda: None)
+        backend = mock.Mock()
+        backend.is_alive.return_value = True
+        with mock.patch("claude_stt.hotkey.platform.system", return_value="Darwin"), \
+                mock.patch.object(keyboard, "Listener", return_value=backend) as ctor:
+            self.assertTrue(listener.start())
+            listener.stop()
+        kwargs = ctor.call_args.kwargs
+        self.assertEqual(kwargs["darwin_intercept"], listener._intercept_event)
+        self.assertNotIn("intercept", kwargs)
 
 
 if __name__ == "__main__":

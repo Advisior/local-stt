@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 - Fresh installs can download their speech model again. The menu bar app started the daemon with `HF_HUB_OFFLINE=1` unconditionally, so with an empty model cache every engine failed to load and dictation produced no text. The daemon launcher now checks the local Hugging Face cache without network access and enables offline mode only once the configured model is fully on disk; an `HF_HUB_OFFLINE` set by the caller still wins (#34)
+- Hotkey is no longer forwarded to the focused application. The macOS suppression callback was passed to `pynput` as `intercept=`, but `pynput` only collects platform options carrying the `darwin_` prefix and drops everything else without warning, so the whole suppression path was dead code. Every hotkey press reached the frontmost app in addition to starting dictation, e.g. F1 also opened the help dialog in Microsoft Teams (#37)
 
 ## [0.6.0] - 2026-09-21
 
