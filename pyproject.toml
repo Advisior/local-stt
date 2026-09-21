@@ -49,3 +49,11 @@ packages = ["src/claude_stt"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+[tool.ruff.lint]
+# Pin explicitly: ruff's own default selection has drifted between releases
+# (CI passed cleanly in July, then started failing in September with no
+# source changes and no ruff version pinned in CI). Pin to the rule set the
+# codebase was actually written against so an upstream ruff release can't
+# silently turn CI red again.
+select = ["E4", "E7", "E9", "F"]
