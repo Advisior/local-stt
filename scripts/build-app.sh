@@ -5,9 +5,15 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 SWIFT_DIR="$PROJECT_DIR/menubar-app"
-VENV_DIR="$PROJECT_DIR/.venv"
 
-VERSION=$("$VENV_DIR/bin/python" -c "from claude_stt import __version__; print(__version__)" 2>/dev/null || echo "0.1.0")
+# Version comes from pyproject.toml, the single source of truth. Reading it must
+# not depend on an installed venv: a clean checkout (CI, new contributor) would
+# otherwise stamp every build with a fallback version.
+VERSION=$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\(.*\)"/\1/p' "$PROJECT_DIR/pyproject.toml" | head -1)
+if [[ -z "$VERSION" ]]; then
+    echo "ERROR: no version found in pyproject.toml" >&2
+    exit 1
+fi
 
 APP_NAME="Local-STT"
 DIST_DIR="$PROJECT_DIR/dist"
@@ -100,6 +106,13 @@ else
     echo "  Run: bash scripts/create-signing-identity.sh"
 fi
 
+# 7. Package for distribution. ditto keeps the bundle structure, resource forks
+# and the signature intact, which plain `zip` does not.
+ZIP_PATH="$DIST_DIR/${APP_NAME}-v${VERSION}.zip"
+rm -f "$ZIP_PATH"
+ditto -c -k --sequesterRsrc --keepParent "$APP_DIR" "$ZIP_PATH"
+
 echo ""
 echo "Built: $APP_DIR (v${VERSION})"
+echo "Zipped: $ZIP_PATH"
 echo "Install: ./scripts/install-app.sh"
