@@ -1,6 +1,6 @@
 [project]
 name = "local-stt"
-version = "0.5.1"
+version = "0.6.0"
 description = "Free, local, private speech-to-text for macOS. No cloud, no API costs."
 readme = "README.md"
 requires-python = ">=3.11,<3.15"
@@ -21,6 +21,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+mlx = ["mlx-whisper>=0.4,<0.5"]
 whisper = ["faster-whisper>=1.0"]
 parakeet = ["parakeet-mlx>=0.5"]
 macos = ["pyobjc-framework-Cocoa"]
