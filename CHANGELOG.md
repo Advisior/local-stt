@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-21
+
+### Added
+- One-command installer (`install.sh`): sets up a self-contained Python environment, builds the menu bar app from source, and installs it, with no manual venv or build steps required (#32)
+- `mlx` optional dependency group (`mlx-whisper`) — previously undeclared even though it's the default and recommended engine
+- Swift build coverage in CI: `swift build -c release` now runs on every PR, catching compile errors that the Python-only test matrix couldn't see
+
+### Fixed
+- `scripts/build-app.sh` now reads the app version from `pyproject.toml` directly instead of importing an installed `claude_stt` package, which silently stamped every clean-checkout build as `0.1.0` (#31)
+- `scripts/build-app.sh` now packages a `Local-STT-vX.Y.Z.zip`, and a tag-triggered release workflow attaches it automatically (#30)
+- The four version sources (`pyproject.toml`, `claude_stt/__init__.py`, `plugin.json`, `marketplace.json`) had drifted out of sync; `scripts/check-versions.sh` now fails CI if they disagree again (#31)
+- Menu bar app now also looks for its Python environment at `~/Library/Application Support/Local-STT/venv`, the portable location `install.sh` always uses, in addition to the existing developer-machine fallback (#32)
+
 ## [0.5.1] - 2026-07-15
 
 ### Fixed

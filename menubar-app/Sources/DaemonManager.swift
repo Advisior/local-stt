@@ -307,17 +307,26 @@ class DaemonManager: ObservableObject {
             }
         }
 
-        // 3. Home directory: ~/Development/claude-stt/.venv/bin/python
+        // 3. Portable install location: what install.sh always sets up, regardless
+        //    of where the source checkout lives or whether it still exists.
+        let portablePython = fm.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Local-STT/venv/bin/python")
+        if fm.fileExists(atPath: portablePython.path) {
+            return portablePython
+        }
+
+        // 4. Legacy developer path, kept for backward compatibility with
+        //    installs that predate the portable location above.
         let homePython = fm.homeDirectoryForCurrentUser
             .appendingPathComponent("Development/claude-stt/.venv/bin/python")
         if fm.fileExists(atPath: homePython.path) {
             return homePython
         }
 
-        // 4. Fallback: system python
+        // 5. Fallback: system python
         let fallback = URL(fileURLWithPath: "/usr/bin/python3")
         if !fm.fileExists(atPath: fallback.path) {
-            NSLog("Local-STT: No Python found (checked CLAUDE_STT_VENV, app-relative, ~/Development/claude-stt/.venv, /usr/bin/python3)")
+            NSLog("Local-STT: No Python found (checked CLAUDE_STT_VENV, app-relative .venv, ~/Library/Application Support/Local-STT/venv, ~/Development/claude-stt/.venv, /usr/bin/python3)")
         }
         return fallback
     }

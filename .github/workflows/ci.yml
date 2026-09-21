@@ -44,3 +44,14 @@ jobs:
       - name: Setup smoke
         shell: bash
         run: uv run python scripts/setup.py --skip-audio-test --skip-hotkey-test --skip-model-download --no-start
+
+  swift-build:
+    # Nothing else in CI compiles the menu bar app, so a broken Swift build
+    # (macro plugin errors, missing symbols) could sit on main unnoticed
+    # until someone tries to cut a release.
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build menu bar app
+        run: swift build -c release
+        working-directory: menubar-app

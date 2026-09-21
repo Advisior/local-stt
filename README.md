@@ -36,30 +36,17 @@ Free, local, private speech-to-text for your Mac. No cloud, no API costs, no dat
 
 ## Download & Install
 
-### Option A: Download (recommended)
-
-1. Download `Local-STT-v*.zip` from the [Releases page](https://github.com/Advisior/local-stt/releases)
-2. Unzip and drag **Local-STT.app** to `/Applications`
-3. Launch from Applications
-
-**Note:** On first launch, macOS may show "app from an unidentified developer". Right-click the app > Open > Open to bypass Gatekeeper.
-
-### Option B: Build from source
+Run this in Terminal:
 
 ```bash
-git clone https://github.com/Advisior/local-stt.git
-cd local-stt
-
-# Python backend
-python3.12 -m venv .venv    # Python 3.11, 3.12, or 3.13
-source .venv/bin/activate
-pip install -e .
-pip install mlx-whisper
-
-# Build and install menu bar app
-bash scripts/build-app.sh
-bash scripts/install-app.sh
+curl -fsSL https://raw.githubusercontent.com/Advisior/local-stt/main/install.sh | bash
 ```
+
+This sets up a self-contained Python environment under `~/Library/Application Support/Local-STT/`, builds the menu bar app from source, and installs it to `/Applications`. It needs the Xcode Command Line Tools (`xcode-select --install` if you don't have them) and works with or without Homebrew/`uv` already installed — the script tells you what's missing if anything is.
+
+**Note:** On first launch, macOS will show "app from an unidentified developer" (this build is ad-hoc signed, not notarized). Right-click the app in `/Applications` > Open > Open to bypass Gatekeeper once.
+
+A plain zip download of the app alone will not work — see [Development](#development) below for why, and for the manual build path if you'd rather not pipe a script into `bash`.
 
 ---
 
@@ -223,14 +210,18 @@ local-stt setup     # First-time setup wizard
 
 ## Development
 
+The menu bar app (`Local-STT.app`) is a thin Swift front end. It shells out to `python -m claude_stt.cli` for everything else — recording, transcription, hotkeys, text injection — so a bare copy of the `.app` has nothing to run. It looks for a Python environment in this order: the `CLAUDE_STT_VENV` env var, a `.venv` next to the app (for the workflow below), the environment `install.sh` sets up at `~/Library/Application Support/Local-STT/venv`, then a couple of legacy fallback locations.
+
+For working on the code itself:
+
 ```bash
 git clone https://github.com/Advisior/local-stt.git
 cd local-stt
 
 # Python daemon
-python3.12 -m venv .venv
+python3.12 -m venv .venv    # Python 3.11, 3.12, or 3.13
 source .venv/bin/activate
-pip install -e ".[dev]"
+pip install -e ".[dev,mlx,macos]"
 
 # Run tests
 python -m unittest discover -s tests
@@ -238,8 +229,9 @@ python -m unittest discover -s tests
 # Lint
 ruff check src/
 
-# Build menu bar app
+# Build menu bar app (picks up the .venv above automatically)
 bash scripts/build-app.sh
+bash scripts/install-app.sh
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
