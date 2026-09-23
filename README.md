@@ -7,7 +7,7 @@ Free, local, private speech-to-text for your Mac. No cloud, no API costs, no dat
 ![Platform](https://img.shields.io/badge/Platform-macOS_(Apple_Silicon)-blue.svg)
 ![GitHub release](https://img.shields.io/github/v/release/Advisior/local-stt?include_prereleases)
 
-> Hold right CMD, speak, release — text appears at your cursor. Works in any app.
+> Press your hotkey, speak — text appears at your cursor. Works in any app.
 
 <p align="center">
   <img src="docs/screenshots/menubar.png" alt="Local-STT menu bar popover" width="320">
@@ -26,7 +26,7 @@ Free, local, private speech-to-text for your Mac. No cloud, no API costs, no dat
 | 🔒 | **100% Local** | MLX Whisper runs on Apple Silicon GPU — no cloud, no API keys |
 | ⚡ | **Fast** | ~2-3s transcription (medium model) on M-series chips |
 | 🇩🇪 | **14 Languages** | German, English, French, Spanish, and 10 more |
-| ⌨️ | **Push-to-Talk** | Hold right CMD (or any configurable hotkey), speak, release |
+| ⌨️ | **Push-to-Talk** | Hold any configurable hotkey, speak, release (or use toggle mode) |
 | 🎛️ | **Settings UI** | Native SwiftUI settings with hotkey recorder, engine picker, vocabulary editor |
 | 🔊 | **Sound Feedback** | Audio cues for recording start/stop |
 | 📝 | **Custom Vocabulary** | Add domain-specific terms to improve recognition accuracy |
@@ -44,6 +44,8 @@ curl -fsSL https://raw.githubusercontent.com/Advisior/local-stt/main/install.sh 
 
 This sets up a self-contained Python environment under `~/Library/Application Support/Local-STT/`, builds the menu bar app from source, and installs it to `/Applications`. It needs the Xcode Command Line Tools (`xcode-select --install` if you don't have them) and works with or without Homebrew/`uv` already installed — the script tells you what's missing if anything is.
 
+**macOS 27:** the SDK that ships with the Command Line Tools can no longer build the menu bar app (SwiftUI's `@State` became a macro whose compiler plugin comes only with Xcode). Install Xcode before running the script, see [#35](https://github.com/Advisior/local-stt/issues/35).
+
 **Note:** On first launch, macOS will show "app from an unidentified developer" (this build is ad-hoc signed, not notarized). Right-click the app in `/Applications` > Open > Open to bypass Gatekeeper once.
 
 A plain zip download of the app alone will not work — see [Development](#development) below for why, and for the manual build path if you'd rather not pipe a script into `bash`.
@@ -55,9 +57,11 @@ A plain zip download of the app alone will not work — see [Development](#devel
 1. **Launch** Local-STT from `/Applications`
 2. **Grant permissions** when macOS prompts you (see [Permissions](#required-permissions) below)
 3. **Open Settings** (click the menu bar icon > Settings) to configure your hotkey, language, and vocabulary
-4. **Hold your hotkey** (default: right CMD), speak, release — text appears at your cursor
+4. **Press your hotkey** (default: `ctrl+shift+space` in toggle mode: press to start, press again to stop), speak — text appears at your cursor
 
-The STT model (~1.5 GB) is downloaded once on first use. After that, everything runs 100% offline.
+The default engine, Moonshine, understands **English only**. For German or any other language, switch the engine to **MLX Whisper** in Settings > General.
+
+The speech model is downloaded once on first use (about 1.5 GB for MLX Whisper `medium` or `large-v3-turbo`). After that, everything runs 100% offline.
 
 ---
 
@@ -91,7 +95,7 @@ Three tabs for full control:
 | **Whisper** | CPU-based fallback | ~5-8s (medium) | Same as MLX |
 | **Moonshine** | Fastest, English-only | ~0.4s | tiny, base |
 
-MLX Whisper uses 4-bit quantized models optimized for M-series chips. The medium model (~1.5 GB, downloaded once) is the best balance of speed and accuracy for German.
+MLX Whisper runs the Whisper models on the Apple GPU. `medium` and `large-v3-turbo` are about 1.5 GB each (downloaded once); `large-v3-turbo` is the more accurate choice, especially for German.
 
 ---
 
@@ -103,11 +107,11 @@ For advanced users, the config file is at `~/.config/local-stt/config.toml` and 
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `hotkey` | `cmd_r` | Recording trigger key. Side-specific: `cmd_r`, `cmd_l`, `shift_l`, `alt_r`, etc. |
-| `mode` | `push-to-talk` | `push-to-talk` (hold to record) or `toggle` (press to start/stop) |
-| `engine` | `mlx` | STT engine: `mlx`, `whisper`, `moonshine` |
+| `hotkey` | `ctrl+shift+space` | Recording trigger key or combination. Side-specific keys work too: `cmd_r`, `cmd_l`, `shift_l`, `alt_r`, `f1`, etc. |
+| `mode` | `toggle` | `toggle` (press to start/stop) or `push-to-talk` (hold to record) |
+| `engine` | `moonshine` | STT engine: `mlx`, `whisper`, `moonshine`, `parakeet`. Moonshine is English-only; use `mlx` for other languages |
 | `whisper_model` | `medium` | Model size: `tiny`, `base`, `small`, `medium`, `large`, `large-v3`, `large-v3-turbo` |
-| `language` | `de` | Recognition language (2-letter code) or omit for auto-detect |
+| `language` | auto-detect | Recognition language (2-letter code); omit the key for auto-detect (an empty string is not valid) |
 | `initial_prompt` | — | Comma-separated vocabulary terms to improve recognition |
 | `sound_effects` | `true` | Audio feedback on recording start/stop |
 | `output_mode` | `auto` | Text insertion: `auto`, `injection` (keyboard), `clipboard`, `clipboard_paste` (clipboard + Cmd+V, most compatible) |
@@ -169,7 +173,8 @@ This removes the app, stops the daemon, and cleans up all macOS permissions (Mic
 |---------|-----|
 | No sound on key press | System Settings > Privacy & Security > Microphone > your terminal app |
 | "No speech detected" (-93 dB) | Check mic input level in System Settings > Sound > Input |
-| Wrong language output | Set language to your language code in Settings > Transcription |
+| Wrong language output | Set language to your language code in Settings > Transcription. With the Moonshine engine, switch to MLX Whisper first (Moonshine is English-only) |
+| No text at all after a fresh install | Re-run the install command. Up to 0.6.0 the app blocked the first model download ([#34](https://github.com/Advisior/local-stt/issues/34)) |
 | Slow transcription | Switch to `small` model in Settings, or ensure no other GPU tasks running |
 | Hotkey doesn't work | Quit other STT tools that capture the same key |
 | Python version error | Use Python 3.11-3.13: `python3.12 -m venv .venv` |
@@ -178,7 +183,7 @@ This removes the app, stops the daemon, and cleans up all macOS permissions (Mic
 ### Logs
 
 ```bash
-tail -f /tmp/claude-stt.log
+tail -f ~/.config/local-stt/daemon.log
 ```
 
 ---
