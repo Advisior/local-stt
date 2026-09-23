@@ -226,6 +226,15 @@ def _windows_pid_exists(pid: int) -> bool:
         return False
 
 
+def _model_is_cached() -> bool:
+    """Whether the configured engine's model is already in the local cache."""
+    try:
+        return build_engine(Config.load()).is_model_cached()
+    except Exception:
+        logger.debug("Model cache probe failed", exc_info=True)
+        return False
+
+
 def _spawn_background() -> bool:
     """Spawn daemon in background using subprocess (all platforms)."""
     log_file = Config.get_config_dir() / "daemon.log"
@@ -233,6 +242,11 @@ def _spawn_background() -> bool:
 
     env = os.environ.copy()
     env.setdefault("CLAUDE_PLUGIN_ROOT", str(_get_plugin_root()))
+    # Offline once the model is on disk, so a start makes no network calls.
+    # A missing model needs one online start to download it. An explicit
+    # HF_HUB_OFFLINE from the caller always wins.
+    if "HF_HUB_OFFLINE" not in env and _model_is_cached():
+        env["HF_HUB_OFFLINE"] = "1"
     python_exe = sys.executable
     if os.name == "nt":
         pythonw = Path(sys.executable).parent / "pythonw.exe"

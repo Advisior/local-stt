@@ -187,12 +187,9 @@ class DaemonManager: ObservableObject {
             process.arguments = ["-m", "claude_stt.cli", "start", "--background"]
             process.standardOutput = FileHandle.nullDevice
             process.standardError = FileHandle.nullDevice
-
-            // Use offline mode for HuggingFace Hub after first model download.
-            // Prevents network requests on every daemon start.
-            var env = ProcessInfo.processInfo.environment
-            env["HF_HUB_OFFLINE"] = "1"
-            process.environment = env
+            // No HF_HUB_OFFLINE here: the daemon launcher enables offline mode
+            // itself once the model is cached. Forcing it blocked the first
+            // model download on every fresh install.
 
             do {
                 try process.run()

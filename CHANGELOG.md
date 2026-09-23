@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-09-23
+
+### Fixed
+- Fresh installs can download their speech model again. The menu bar app started the daemon with `HF_HUB_OFFLINE=1` unconditionally, so with an empty model cache every engine failed to load and dictation produced no text. The daemon launcher now checks the local Hugging Face cache without network access and enables offline mode only once the configured model is fully on disk; an `HF_HUB_OFFLINE` set by the caller still wins (#34)
+
 ## [0.6.0] - 2026-09-21
 
 ### Added

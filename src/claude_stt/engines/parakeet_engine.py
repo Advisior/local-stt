@@ -6,6 +6,8 @@ import logging
 
 import numpy as np
 
+from .. import hf_cache
+
 _parakeet_available = False
 
 try:
@@ -47,6 +49,9 @@ class ParakeetEngine:
 
     def is_available(self) -> bool:
         return _parakeet_available
+
+    def is_model_cached(self) -> bool:
+        return hf_cache.is_cached(self._hf_repo, ["config.json", "model.safetensors"])
 
     def load_model(self) -> bool:
         if not self.is_available():

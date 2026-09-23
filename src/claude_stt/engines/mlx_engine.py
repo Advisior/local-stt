@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
+
+from .. import hf_cache
 
 _mlx_whisper_available = False
 
@@ -47,6 +50,15 @@ class MLXWhisperEngine:
 
     def is_available(self) -> bool:
         return _mlx_whisper_available
+
+    def is_model_cached(self) -> bool:
+        if Path(self._hf_repo).is_dir():
+            return True
+        # mlx_whisper loads weights.safetensors, older repos ship weights.npz.
+        return any(
+            hf_cache.is_cached(self._hf_repo, ["config.json", weights])
+            for weights in ("weights.safetensors", "weights.npz")
+        )
 
     def load_model(self) -> bool:
         if not self.is_available():
