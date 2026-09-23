@@ -12,6 +12,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Fresh installs can download their speech model again. The menu bar app started the daemon with `HF_HUB_OFFLINE=1` unconditionally, so with an empty model cache every engine failed to load and dictation produced no text. The daemon launcher now checks the local Hugging Face cache without network access and enables offline mode only once the configured model is fully on disk; an `HF_HUB_OFFLINE` set by the caller still wins (#34)
 - Hotkey is no longer forwarded to the focused application. The macOS suppression callback was passed to `pynput` as `intercept=`, but `pynput` only collects platform options carrying the `darwin_` prefix and drops everything else without warning, so the whole suppression path was dead code. Every hotkey press reached the frontmost app in addition to starting dictation, e.g. F1 also opened the help dialog in Microsoft Teams. Only the keys of a triggered hotkey are swallowed, from the press that completes the combination until their release, so with `ctrl+shift+space` a plain Space still types (#37)
 
+### Changed
+- README now documents the actual defaults (`ctrl+shift+space`, toggle mode, auto-detected language, Moonshine engine), warns that Moonshine is English-only, gives the correct log path and notes that the Command Line Tools alone cannot build the app on macOS 27 (#35)
+- CI and release workflows use `actions/checkout@v7` and `actions/setup-python@v7`
+
 ## [0.6.0] - 2026-09-21
 
 ### Added
