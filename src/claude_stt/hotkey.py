@@ -201,11 +201,15 @@ class HotkeyListener:
             from Quartz import (
                 CGEventGetIntegerValueField,
                 kCGEventKeyDown,
+                kCGKeyboardEventAutorepeat,
                 kCGKeyboardEventKeycode,
             )
             vk = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
+            is_repeat = CGEventGetIntegerValueField(event, kCGKeyboardEventAutorepeat) != 0
             with self._lock:
-                suppress = self._should_suppress(vk, event_type == kCGEventKeyDown)
+                suppress = self._should_suppress(
+                    vk, event_type == kCGEventKeyDown, is_repeat=is_repeat
+                )
             if suppress:
                 self._logger.debug("Intercept: suppressing vk=%d", vk)
                 return None
@@ -213,20 +217,21 @@ class HotkeyListener:
             self._logger.exception("Intercept error")
         return event
 
-    def _should_suppress(self, vk: int, is_key_down: bool) -> bool:
+    def _should_suppress(self, vk: int, is_key_down: bool, is_repeat: bool = False) -> bool:
         """Whether a key event belongs to a triggered hotkey. Call with the lock held.
 
         A key is swallowed from the press that completes the full combination
-        until its release. Matching the keycode alone would swallow every plain
-        Space system-wide when the hotkey is ctrl+shift+space.
+        until its own release, even if a modifier is let go first. Matching the
+        keycode alone would swallow every plain Space system-wide when the
+        hotkey is ctrl+shift+space.
         """
         if vk in self._suppressed_vks:
             if not is_key_down:
                 self._suppressed_vks.discard(vk)  # key-up or modifier release
                 return True
-            if self._hotkey_active:
-                return True  # auto-repeat while the hotkey is held
-            self._suppressed_vks.discard(vk)  # its release was missed, start over
+            if is_repeat or self._hotkey_active:
+                return True  # still held down
+            self._suppressed_vks.discard(vk)  # fresh press: its release was missed
         if self._hotkey_active and vk in self._hotkey_vks:
             self._suppressed_vks.add(vk)
             return True
