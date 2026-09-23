@@ -48,6 +48,7 @@ class HotkeyListener:
         self._is_recording = False
         self._pressed_keys: set = set()
         self._hotkey_active = False
+        self._suppressed_vks: set[int] = set()
         self._lock = threading.Lock()
         self._logger = logging.getLogger(__name__)
         self._event_queue: "queue.Queue[Optional[tuple[str, Optional[Callable[[], None]]]]]" = (
@@ -67,6 +68,12 @@ class HotkeyListener:
         self._hotkey_keys = self._parse_hotkey(hotkey)
         if not self._hotkey_keys:
             raise HotkeyError(f"Hotkey '{hotkey}' did not map to any keys")
+        # Virtual keycodes of the hotkey, used to swallow its events on macOS.
+        self._hotkey_vks = {
+            vk
+            for vk in (getattr(getattr(k, "value", k), "vk", None) for k in self._hotkey_keys)
+            if vk is not None
+        }
 
     # Side-specific modifier keys that bypass normal normalization
     _SIDE_SPECIFIC_KEYS = {
@@ -185,19 +192,45 @@ class HotkeyListener:
                 self._logger.exception("Hotkey callback failed: %s", label)
 
     def _intercept_event(self, event_type, event):
-        """macOS-only: suppress hotkey key events, pass everything else through."""
+        """macOS-only: swallow the keys of a triggered hotkey, pass everything else.
+
+        pynput calls this after _on_press/_on_release have handled the same
+        event, so _hotkey_active is already up to date.
+        """
         try:
-            from Quartz import CGEventGetIntegerValueField, kCGKeyboardEventKeycode
+            from Quartz import (
+                CGEventGetIntegerValueField,
+                kCGEventKeyDown,
+                kCGKeyboardEventKeycode,
+            )
             vk = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
-            for hotkey_key in self._hotkey_keys:
-                value = getattr(hotkey_key, "value", hotkey_key)
-                key_vk = getattr(value, "vk", None)
-                if key_vk is not None and key_vk == vk:
-                    self._logger.debug("Intercept: suppressing vk=%d", vk)
-                    return None  # suppress
+            with self._lock:
+                suppress = self._should_suppress(vk, event_type == kCGEventKeyDown)
+            if suppress:
+                self._logger.debug("Intercept: suppressing vk=%d", vk)
+                return None
         except Exception:
             self._logger.exception("Intercept error")
-        return event  # pass through
+        return event
+
+    def _should_suppress(self, vk: int, is_key_down: bool) -> bool:
+        """Whether a key event belongs to a triggered hotkey. Call with the lock held.
+
+        A key is swallowed from the press that completes the full combination
+        until its release. Matching the keycode alone would swallow every plain
+        Space system-wide when the hotkey is ctrl+shift+space.
+        """
+        if vk in self._suppressed_vks:
+            if not is_key_down:
+                self._suppressed_vks.discard(vk)  # key-up or modifier release
+                return True
+            if self._hotkey_active:
+                return True  # auto-repeat while the hotkey is held
+            self._suppressed_vks.discard(vk)  # its release was missed, start over
+        if self._hotkey_active and vk in self._hotkey_vks:
+            self._suppressed_vks.add(vk)
+            return True
+        return False
 
     def _enqueue_event(self, label: str, callback: Optional[Callable[[], None]]) -> None:
         self._ensure_worker()
@@ -337,6 +370,7 @@ class HotkeyListener:
             self._listener.stop()
             self._listener = None
             self._pressed_keys.clear()
+            self._suppressed_vks.clear()
             self._is_recording = False
         self._worker_stop.set()
         try:
