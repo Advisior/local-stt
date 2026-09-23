@@ -23,7 +23,7 @@ jobs:
     # Apple Silicon runner: the app is arm64 only and needs the Swift toolchain.
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
 
