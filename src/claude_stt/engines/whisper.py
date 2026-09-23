@@ -10,9 +10,11 @@ import numpy as np
 
 _whisper_available = False
 _WhisperModel = None
+_download_model = None
 
 try:
     from faster_whisper import WhisperModel as _WhisperModel
+    from faster_whisper.utils import download_model as _download_model
 
     _whisper_available = True
 except ImportError:
@@ -43,6 +45,23 @@ class WhisperEngine:
 
     def is_available(self) -> bool:
         return _whisper_available
+
+    def is_model_cached(self) -> bool:
+        if os.path.isdir(self.model_name):
+            return True
+        if _download_model is None:
+            return False
+        try:
+            snapshot = _download_model(self.model_name, local_files_only=True)
+        except Exception:
+            # Not cached, or not a known model size or repo id.
+            return False
+        # The snapshot folder exists as soon as the first file finished, so an
+        # interrupted download must not count. Vocabulary is .txt or .json.
+        present = set(os.listdir(snapshot))
+        return {"config.json", "model.bin", "tokenizer.json"} <= present and bool(
+            {"vocabulary.txt", "vocabulary.json"} & present
+        )
 
     def load_model(self) -> bool:
         if not self.is_available():

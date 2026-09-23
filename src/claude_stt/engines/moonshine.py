@@ -4,6 +4,8 @@ from typing import Optional
 import logging
 import numpy as np
 
+from .. import hf_cache
+
 # Try to import moonshine
 _moonshine_available = False
 _transcribe_fn = None
@@ -41,6 +43,14 @@ class MoonshineEngine:
     def is_available(self) -> bool:
         """Check if Moonshine is available."""
         return _moonshine_available
+
+    def is_model_cached(self) -> bool:
+        # Same repo and layout moonshine_onnx downloads from (float precision).
+        folder = f"onnx/merged/{self.model_name.split('/')[-1]}/float"
+        return hf_cache.is_cached(
+            "UsefulSensors/moonshine",
+            [f"{folder}/encoder_model.onnx", f"{folder}/decoder_model_merged.onnx"],
+        )
 
     def load_model(self) -> bool:
         """Load the Moonshine model.

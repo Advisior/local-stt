@@ -26,3 +26,7 @@ class STTEngine(Protocol):
     def load_model(self) -> bool:
         """Load the model. Returns True if successful."""
         ...
+
+    def is_model_cached(self) -> bool:
+        """Check, without network access, whether the model is on disk."""
+        ...
