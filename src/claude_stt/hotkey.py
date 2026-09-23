@@ -374,8 +374,9 @@ class HotkeyListener:
         if self._listener is not None:
             self._listener.stop()
             self._listener = None
-            self._pressed_keys.clear()
-            self._suppressed_vks.clear()
+            with self._lock:
+                self._pressed_keys.clear()
+                self._suppressed_vks.clear()
             self._is_recording = False
         self._worker_stop.set()
         try:

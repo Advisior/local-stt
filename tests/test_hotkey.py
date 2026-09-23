@@ -184,6 +184,20 @@ class HotkeyListenerTests(unittest.TestCase):
         self.assertIs(listener._intercept_event(Quartz.kCGEventKeyDown, event), event)
 
     @unittest.skipUnless(_QUARTZ_AVAILABLE, "Quartz only on macOS")
+    def test_macos_modifier_only_hotkey_is_swallowed_on_press_and_release(self):
+        # Modifiers arrive as flagsChanged events for both press and release.
+        listener = self._listener("cmd_r", mode="push-to-talk")
+        cmd_r = keyboard.Key.cmd_r
+        event = Quartz.CGEventCreateKeyboardEvent(None, self._vk(cmd_r), True)
+        listener._on_press(cmd_r)
+        self.assertIsNone(listener._intercept_event(Quartz.kCGEventFlagsChanged, event))
+        listener._on_release(cmd_r)
+        self.assertIsNone(listener._intercept_event(Quartz.kCGEventFlagsChanged, event))
+        other = Quartz.CGEventCreateKeyboardEvent(None, self._vk(keyboard.Key.cmd_l), True)
+        listener._on_press(keyboard.Key.cmd_l)
+        self.assertIs(listener._intercept_event(Quartz.kCGEventFlagsChanged, other), other)
+
+    @unittest.skipUnless(_QUARTZ_AVAILABLE, "Quartz only on macOS")
     def test_macos_intercept_reads_autorepeat_flag(self):
         listener = self._listener("ctrl+shift+space")
         ctrl, shift, space = keyboard.Key.ctrl, keyboard.Key.shift, keyboard.Key.space
