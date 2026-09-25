@@ -34,7 +34,7 @@ uv run ruff check src/
 - `daemon_service.py` - Runtime orchestration (`STTDaemon` class coordinates all components)
 - `hotkey.py` - Global hotkey listener using pynput (supports toggle and push-to-talk modes)
 - `recorder.py` - Audio capture via sounddevice
-- `engines/` - STT engine implementations (Moonshine default, Whisper optional)
+- `engines/` - STT engine implementations (MLX Whisper default on Apple Silicon, Moonshine default elsewhere, Whisper and Parakeet optional)
 - `keyboard.py` - Text output via keyboard injection or clipboard fallback
 - `window.py` - Platform-specific window tracking to restore focus after transcription
 - `config.py` - TOML-based config with validation, stored in `~/.config/local-stt/`

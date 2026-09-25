@@ -59,7 +59,7 @@ A plain zip download of the app alone will not work — see [Development](#devel
 3. **Open Settings** (click the menu bar icon > Settings) to configure your hotkey, language, and vocabulary
 4. **Press your hotkey** (default: `ctrl+shift+space` in toggle mode: press to start, press again to stop), speak — text appears at your cursor
 
-The default engine, Moonshine, understands **English only**. For German or any other language, switch the engine to **MLX Whisper** in Settings > General.
+Fresh installs on Apple Silicon use **MLX Whisper** (`large-v3-turbo`), which understands German and many other languages. Where MLX is not available (Intel Macs, Linux, Windows) the default is **Moonshine**, which understands **English only**. An existing `config.toml` keeps the engine it already names.
 
 The speech model is downloaded once on first use (about 1.5 GB for MLX Whisper `medium` or `large-v3-turbo`). After that, everything runs 100% offline.
 
@@ -91,7 +91,7 @@ Three tabs for full control:
 
 | Engine | Best for | Speed | Models |
 |--------|----------|-------|--------|
-| **MLX Whisper** (recommended) | Apple Silicon Macs | ~2-3s (medium) | tiny, base, small, **medium**, large, large-v3, large-v3-turbo |
+| **MLX Whisper** (default on Apple Silicon) | Apple Silicon Macs | ~2-3s (medium) | tiny, base, small, medium, large, large-v3, **large-v3-turbo** |
 | **Whisper** | CPU-based fallback | ~5-8s (medium) | Same as MLX |
 | **Moonshine** | Fastest, English-only | ~0.4s | tiny, base |
 
@@ -109,8 +109,8 @@ For advanced users, the config file is at `~/.config/local-stt/config.toml` and 
 |--------|---------|-------------|
 | `hotkey` | `ctrl+shift+space` | Recording trigger key or combination. Side-specific keys work too: `cmd_r`, `cmd_l`, `shift_l`, `alt_r`, `f1`, etc. |
 | `mode` | `toggle` | `toggle` (press to start/stop) or `push-to-talk` (hold to record) |
-| `engine` | `moonshine` | STT engine: `mlx`, `whisper`, `moonshine`, `parakeet`. Moonshine is English-only; use `mlx` for other languages |
-| `whisper_model` | `medium` | Model size: `tiny`, `base`, `small`, `medium`, `large`, `large-v3`, `large-v3-turbo` |
+| `engine` | `mlx` on Apple Silicon, else `moonshine` | STT engine: `mlx`, `whisper`, `moonshine`, `parakeet`. Moonshine is English-only; use `mlx` for other languages |
+| `whisper_model` | `large-v3-turbo` on Apple Silicon, else `medium` | Model size: `tiny`, `base`, `small`, `medium`, `large`, `large-v3`, `large-v3-turbo` |
 | `language` | auto-detect | Recognition language (2-letter code); omit the key for auto-detect (an empty string is not valid) |
 | `initial_prompt` | — | Comma-separated vocabulary terms to improve recognition |
 | `sound_effects` | `true` | Audio feedback on recording start/stop |

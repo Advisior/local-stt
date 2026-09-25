@@ -24,6 +24,21 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def mlx_supported() -> bool:
+    """Check whether MLX can run here (macOS on Apple Silicon)."""
+    return platform.system() == "Darwin" and platform.machine() == "arm64"
+
+
+def default_engine() -> str:
+    """Default engine for fresh installs: MLX Whisper where available, else Moonshine."""
+    return "mlx" if mlx_supported() else "moonshine"
+
+
+def default_whisper_model() -> str:
+    """Default Whisper model size, matching the default engine."""
+    return "large-v3-turbo" if mlx_supported() else "medium"
+
+
 @dataclass
 class Config:
     """claude-stt configuration."""
@@ -33,9 +48,11 @@ class Config:
     mode: Literal["push-to-talk", "toggle"] = "toggle"
 
     # Engine settings
-    engine: Literal["moonshine", "whisper", "mlx", "parakeet"] = "moonshine"
+    engine: Literal["moonshine", "whisper", "mlx", "parakeet"] = field(
+        default_factory=default_engine
+    )
     moonshine_model: str = "moonshine/base"
-    whisper_model: str = "medium"
+    whisper_model: str = field(default_factory=default_whisper_model)
     parakeet_model: str = "tdt-0.6b-v3"
 
     # Audio settings
@@ -126,9 +143,9 @@ class Config:
             config = cls(
                 hotkey=stt_config.get("hotkey", cls.hotkey),
                 mode=stt_config.get("mode", cls.mode),
-                engine=stt_config.get("engine", cls.engine),
+                engine=stt_config.get("engine", default_engine()),
                 moonshine_model=stt_config.get("moonshine_model", cls.moonshine_model),
-                whisper_model=stt_config.get("whisper_model", cls.whisper_model),
+                whisper_model=stt_config.get("whisper_model", default_whisper_model()),
                 parakeet_model=stt_config.get("parakeet_model", cls.parakeet_model),
                 sample_rate=stt_config.get("sample_rate", cls.sample_rate),
                 max_recording_seconds=stt_config.get(

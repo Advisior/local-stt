@@ -14,8 +14,14 @@ class ConfigManager: ObservableObject {
     @Published var outputMode: String = "auto"
 
     // Read-only display
+    // Defaults for fresh installs; must match config.py. MLX Whisper needs Apple Silicon.
+    #if arch(arm64)
+    @Published var engine: String = "mlx"
+    @Published var whisperModel: String = "large-v3-turbo"
+    #else
     @Published var engine: String = "moonshine"
     @Published var whisperModel: String = "medium"
+    #endif
     @Published var moonshineModel: String = "moonshine/base"
     @Published var parakeetModel: String = "tdt-0.6b-v3"
 

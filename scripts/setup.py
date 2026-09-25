@@ -86,6 +86,13 @@ def _platform_extra() -> str | None:
     return None
 
 
+def _default_engine_extra() -> str | None:
+    # MLX Whisper is the default engine on Apple Silicon, so install it there.
+    if platform.system() == "Darwin" and platform.machine() == "arm64":
+        return "mlx"
+    return None
+
+
 def _check_pip(python_path: Path) -> bool:
     result = subprocess.run(
         [str(python_path), "-m", "pip", "--version"],
@@ -173,6 +180,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     platform_extra = _platform_extra()
     if platform_extra:
         extras.append(platform_extra)
+    engine_extra = _default_engine_extra()
+    if engine_extra:
+        extras.append(engine_extra)
     if args.with_whisper:
         extras.append("whisper")
     if args.dev:

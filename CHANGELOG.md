@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-25
+
+### Changed
+- Fresh installs on Apple Silicon now default to the MLX Whisper engine with the `large-v3-turbo` model instead of the English-only Moonshine engine. Intel Macs, Linux and Windows keep Moonshine, because MLX does not run there. The Python config and the menu bar app use the same defaults. An existing `config.toml` is not changed: it keeps the engine and model it already names (#38)
+- `scripts/setup.py` now installs the `mlx` extra on Apple Silicon, so the plugin setup path has the new default engine available, and setup names the `mlx` extra when MLX Whisper dependencies are missing (#38)
+
 ## [0.6.1] - 2026-09-23
 
 ### Fixed
