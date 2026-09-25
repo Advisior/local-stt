@@ -250,6 +250,11 @@ def _ensure_engine_ready(config: Config, skip_model_download: bool) -> bool:
                 "Whisper dependencies missing. Run: "
                 f"{_dependency_hint('whisper')}"
             )
+        elif config.engine == "mlx":
+            _print_error(
+                "MLX Whisper dependencies missing. Run: "
+                f"{_dependency_hint('mlx')}"
+            )
         else:
             _print_error(
                 "STT engine dependencies missing. Run: "
