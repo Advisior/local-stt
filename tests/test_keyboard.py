@@ -41,6 +41,8 @@ class InsertResultTests(unittest.TestCase):
         self.kb = mock.Mock()
         for patcher in (
             mock.patch.object(keyboard, "_PYNPUT_AVAILABLE", True),
+            # headless Linux CI has no pynput: Key is None there
+            mock.patch.object(keyboard, "Key", keyboard.Key or mock.Mock(name="Key")),
             mock.patch.object(keyboard, "get_keyboard", return_value=self.kb),
             mock.patch.object(keyboard, "is_wayland", return_value=False),
             mock.patch.object(keyboard, "play_sound"),

@@ -4,6 +4,7 @@ import unittest
 from unittest import mock
 
 from claude_stt import daemon
+from claude_stt.hotkey import _PYNPUT_AVAILABLE
 
 
 class DaemonPidTests(unittest.TestCase):
@@ -102,6 +103,7 @@ class ModelIsCachedTests(unittest.TestCase):
             self.assertFalse(daemon._model_is_cached())
 
 
+@unittest.skipUnless(_PYNPUT_AVAILABLE, "pynput unavailable in this environment")
 class UndoWiringTests(unittest.TestCase):
     """STTDaemon wires the optional undo hotkey (#45)."""
 
