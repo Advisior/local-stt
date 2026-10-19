@@ -1,9 +1,11 @@
 """Global hotkey detection using pynput."""
 
 import logging
+import os
 import platform
 import queue
 import threading
+from dataclasses import dataclass
 from typing import Callable, Optional
 
 try:
@@ -17,11 +19,25 @@ except Exception as exc:
 
 from .errors import HotkeyError
 
+RECORD = "record"
+
+
+@dataclass
+class _Binding:
+    """One registered key combination."""
+
+    label: str
+    keys: frozenset
+    side_specific: bool  # left/right modifiers are distinct (e.g. "cmd_r")
+    vks: frozenset  # virtual keycodes, used to swallow its events on macOS
+    active: bool = False  # full combination currently held
+
 
 class HotkeyListener:
     """Listens for global hotkey events.
 
-    Supports both push-to-talk (hold to record) and toggle modes.
+    The record hotkey supports push-to-talk (hold to record) and toggle modes.
+    Further bindings (add_binding) fire their callback once per press.
     """
 
     def __init__(
@@ -30,6 +46,7 @@ class HotkeyListener:
         on_start: Optional[Callable[[], None]] = None,
         on_stop: Optional[Callable[[], None]] = None,
         mode: str = "push-to-talk",
+        on_other_key: Optional[Callable[[], None]] = None,
     ):
         """Initialize the hotkey listener.
 
@@ -38,17 +55,27 @@ class HotkeyListener:
             on_start: Callback when recording should start.
             on_stop: Callback when recording should stop.
             mode: "push-to-talk" or "toggle".
+            on_other_key: macOS only. Called on the listener thread for every
+                key-down that reaches the focused app and was not sent by this
+                process (no modifiers, no hotkey keys). Must return quickly.
         """
         self.hotkey_str = hotkey
         self.on_start = on_start
         self.on_stop = on_stop
         self.mode = mode
+        self.on_other_key = on_other_key
 
         self._listener: Optional[keyboard.Listener] = None
         self._is_recording = False
         self._pressed_keys: set = set()
-        self._hotkey_active = False
         self._suppressed_vks: set[int] = set()
+        self._bindings: list[_Binding] = []
+        self._callbacks: dict[str, Optional[Callable[[], None]]] = {}
+        # macOS: pynput reports injected events before the intercept sees the
+        # raw event with its source PID; hold them back until then.
+        self._defer_injected = False
+        self._pending_injected: list[tuple[bool, object]] = []
+        self._own_pid = os.getpid()
         self._lock = threading.Lock()
         self._logger = logging.getLogger(__name__)
         self._event_queue: "queue.Queue[Optional[tuple[str, Optional[Callable[[], None]]]]]" = (
@@ -63,17 +90,40 @@ class HotkeyListener:
                 message = f"{message}: {_PYNPUT_IMPORT_ERROR}"
             raise HotkeyError(message)
 
-        # Parse the hotkey
-        self._side_specific = False
-        self._hotkey_keys = self._parse_hotkey(hotkey)
-        if not self._hotkey_keys:
+        record = self._make_binding(RECORD, hotkey)
+        self._bindings.append(record)
+        self._hotkey_keys = set(record.keys)
+
+    @property
+    def _record(self) -> _Binding:
+        return self._bindings[0]
+
+    def _make_binding(self, label: str, hotkey: str) -> _Binding:
+        keys, side_specific = self._parse_hotkey(hotkey)
+        if not keys:
             raise HotkeyError(f"Hotkey '{hotkey}' did not map to any keys")
-        # Virtual keycodes of the hotkey, used to swallow its events on macOS.
-        self._hotkey_vks = {
+        vks = frozenset(
             vk
-            for vk in (getattr(getattr(k, "value", k), "vk", None) for k in self._hotkey_keys)
+            for vk in (getattr(getattr(k, "value", k), "vk", None) for k in keys)
             if vk is not None
-        }
+        )
+        return _Binding(label, frozenset(keys), side_specific, vks)
+
+    def add_binding(self, label: str, hotkey: str, callback: Callable[[], None]) -> None:
+        """Register another hotkey that calls ``callback`` once per press.
+
+        Raises:
+            HotkeyError: if the hotkey does not parse or equals an existing one.
+        """
+        binding = self._make_binding(label, hotkey)
+        with self._lock:
+            for existing in self._bindings:
+                if existing.keys == binding.keys:
+                    raise HotkeyError(
+                        f"Hotkey '{hotkey}' is already the {existing.label} hotkey"
+                    )
+            self._bindings.append(binding)
+            self._callbacks[label] = callback
 
     # Side-specific modifier keys that bypass normal normalization
     _SIDE_SPECIFIC_KEYS = {
@@ -87,7 +137,7 @@ class HotkeyListener:
         "alt_l": "alt_l", "alt_left": "alt_l", "left_alt": "alt_l",
     }
 
-    def _parse_hotkey(self, hotkey_str: str) -> set:
+    def _parse_hotkey(self, hotkey_str: str) -> tuple[set, bool]:
         """Parse hotkey string to a set of keys.
 
         Args:
@@ -95,7 +145,7 @@ class HotkeyListener:
                         or "cmd_r" for side-specific single modifier keys.
 
         Returns:
-            Set of key objects.
+            Set of key objects, and whether left/right modifiers are distinct.
         """
         if not hotkey_str.strip():
             raise HotkeyError("Hotkey cannot be empty")
@@ -112,8 +162,7 @@ class HotkeyListener:
                     raise HotkeyError(f"Key '{part}' not supported by pynput")
 
         if side_keys:
-            self._side_specific = True
-            return side_keys
+            return side_keys, True
 
         try:
             normalized = self._normalize_hotkey_string(hotkey_str)
@@ -125,8 +174,8 @@ class HotkeyListener:
         for key in keys:
             normalized_key = self._normalize_key(key)
             if normalized_key is not None:
-                normalized_keys.add(normalized_key)
-        return normalized_keys
+                normalized_keys.add(self._collapse_side(normalized_key))
+        return normalized_keys, False
 
     def _normalize_hotkey_string(self, hotkey_str: str) -> str:
         parts = [part.strip() for part in hotkey_str.split("+") if part.strip()]
@@ -146,6 +195,9 @@ class HotkeyListener:
             "tab": "<tab>",
             "esc": "<esc>",
             "escape": "<esc>",
+            # Names the menu bar app's hotkey recorder writes
+            "pageup": "<page_up>",
+            "pagedown": "<page_down>",
         }
 
         normalized_parts = []
@@ -159,6 +211,9 @@ class HotkeyListener:
                 continue
             if lowered.startswith("f") and lowered[1:].isdigit():
                 normalized_parts.append(f"<{lowered}>")
+                continue
+            if len(lowered) > 1 and lowered in keyboard.Key.__members__:
+                normalized_parts.append(f"<{lowered}>")  # backspace, delete, up, ...
                 continue
             normalized_parts.append(lowered)
 
@@ -195,24 +250,35 @@ class HotkeyListener:
         """macOS-only: swallow the keys of a triggered hotkey, pass everything else.
 
         pynput calls this after _on_press/_on_release have handled the same
-        event, so _hotkey_active is already up to date.
+        event, so the bindings' active state is already up to date. Events this
+        process injected itself (Cmd+V, typed text, undo Backspaces) pass
+        untouched and change no state.
         """
         try:
             from Quartz import (
                 CGEventGetIntegerValueField,
                 kCGEventKeyDown,
+                kCGEventSourceUnixProcessID,
                 kCGKeyboardEventAutorepeat,
                 kCGKeyboardEventKeycode,
             )
+            pending, self._pending_injected = self._pending_injected, []
+            source_pid = CGEventGetIntegerValueField(event, kCGEventSourceUnixProcessID)
+            if pending and source_pid == self._own_pid:
+                return event  # sent by this process: no state change, no invalidation
+            for is_press, key in pending:  # injected by another process
+                (self._handle_press if is_press else self._handle_release)(key)
+
             vk = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
             is_repeat = CGEventGetIntegerValueField(event, kCGKeyboardEventAutorepeat) != 0
+            is_key_down = event_type == kCGEventKeyDown
             with self._lock:
-                suppress = self._should_suppress(
-                    vk, event_type == kCGEventKeyDown, is_repeat=is_repeat
-                )
+                suppress = self._should_suppress(vk, is_key_down, is_repeat=is_repeat)
             if suppress:
                 self._logger.debug("Intercept: suppressing vk=%d", vk)
                 return None
+            if is_key_down and self.on_other_key is not None:
+                self.on_other_key()
         except Exception:
             self._logger.exception("Intercept error")
         return event
@@ -229,10 +295,10 @@ class HotkeyListener:
             if not is_key_down:
                 self._suppressed_vks.discard(vk)  # key-up or modifier release
                 return True
-            if is_repeat or self._hotkey_active:
+            if is_repeat or any(b.active for b in self._bindings):
                 return True  # still held down
             self._suppressed_vks.discard(vk)  # fresh press: its release was missed
-        if self._hotkey_active and vk in self._hotkey_vks:
+        if any(b.active and vk in b.vks for b in self._bindings):
             self._suppressed_vks.add(vk)
             return True
         return False
@@ -273,11 +339,11 @@ class HotkeyListener:
                 if key.vk in mac_vk_map:
                     return mac_vk_map[key.vk]
 
-        # Handle left/right modifier variants
-        # Skip normalization if hotkey uses side-specific keys
-        if self._side_specific:
-            return key
+        return key
 
+    @staticmethod
+    def _collapse_side(key):
+        """Map left/right modifier variants to the generic modifier."""
         if key in (keyboard.Key.ctrl_l, keyboard.Key.ctrl_r):
             return keyboard.Key.ctrl
         if key in (keyboard.Key.shift_l, keyboard.Key.shift_r):
@@ -289,49 +355,76 @@ class HotkeyListener:
 
         return key
 
-    def _on_press(self, key):
-        """Handle key press event."""
+    def _view(self, key, binding: _Binding):
+        return key if binding.side_specific else self._collapse_side(key)
+
+    def _on_press(self, key, injected: bool = False):
+        """Handle key press event (pynput passes ``injected`` since 1.8)."""
+        if injected and self._defer_injected:
+            self._pending_injected.append((True, key))
+            return
+        self._handle_press(key)
+
+    def _on_release(self, key, injected: bool = False):
+        """Handle key release event."""
+        if injected and self._defer_injected:
+            self._pending_injected.append((False, key))
+            return
+        self._handle_release(key)
+
+    def _handle_press(self, key):
         normalized = self._normalize_key(key)
         if normalized is None:
             return
 
         with self._lock:
             self._pressed_keys.add(normalized)
-
-            # Check if hotkey combination is pressed
-            if self._hotkey_keys.issubset(self._pressed_keys):
-                if self._hotkey_active:
-                    return
-                self._hotkey_active = True
-                if self.mode == "toggle":
-                    # Toggle mode: press to start/stop
-                    if not self._is_recording:
-                        self._is_recording = True
-                        self._enqueue_event("start", self.on_start)
-                    else:
-                        self._is_recording = False
-                        self._enqueue_event("stop", self.on_stop)
-                else:
-                    # Push-to-talk: press to start
-                    if not self._is_recording:
-                        self._is_recording = True
-                        self._enqueue_event("start", self.on_start)
+            matched = [
+                b for b in self._bindings
+                if not b.active
+                and b.keys.issubset({self._view(k, b) for k in self._pressed_keys})
+            ]
+            if not matched:
+                return
+            # "shift+f1" must not also fire "f1": the larger combination wins.
+            winner = max(matched, key=lambda b: len(b.keys))
+            for binding in matched:
+                binding.active = True
+            if winner.label == RECORD:
+                self._fire_record()
+            else:
+                self._enqueue_event(winner.label, self._callbacks.get(winner.label))
         # Event suppression is handled by _intercept_event (macOS) via darwin_intercept=
 
-    def _on_release(self, key):
-        """Handle key release event."""
+    def _fire_record(self) -> None:
+        """Start or stop recording. Call with the lock held."""
+        if self.mode == "toggle":
+            # Toggle mode: press to start/stop
+            if not self._is_recording:
+                self._is_recording = True
+                self._enqueue_event("start", self.on_start)
+            else:
+                self._is_recording = False
+                self._enqueue_event("stop", self.on_stop)
+        elif not self._is_recording:
+            # Push-to-talk: press to start
+            self._is_recording = True
+            self._enqueue_event("start", self.on_start)
+
+    def _handle_release(self, key):
         normalized = self._normalize_key(key)
         if normalized is None:
             return
 
         with self._lock:
             self._pressed_keys.discard(normalized)
-            if normalized in self._hotkey_keys:
-                self._hotkey_active = False
+            for binding in self._bindings:
+                if self._view(normalized, binding) in binding.keys:
+                    binding.active = False
 
             # In push-to-talk mode, release any hotkey key to stop
             if self.mode == "push-to-talk" and self._is_recording:
-                if normalized in self._hotkey_keys:
+                if self._view(normalized, self._record) in self._record.keys:
                     self._is_recording = False
                     self._enqueue_event("stop", self.on_stop)
         # Event suppression is handled by _intercept_event (macOS) via darwin_intercept=
@@ -349,6 +442,7 @@ class HotkeyListener:
             return True
 
         try:
+            self._defer_injected = platform.system() == "Darwin"
             self._listener = keyboard.Listener(
                 on_press=self._on_press,
                 on_release=self._on_release,
@@ -377,6 +471,9 @@ class HotkeyListener:
             with self._lock:
                 self._pressed_keys.clear()
                 self._suppressed_vks.clear()
+                self._pending_injected.clear()
+                for binding in self._bindings:
+                    binding.active = False
             self._is_recording = False
         self._worker_stop.set()
         try:

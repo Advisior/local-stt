@@ -79,7 +79,7 @@ The menu bar app lives in your status bar and provides quick access to all contr
 
 Three tabs for full control:
 
-**General** — Hotkey recorder (click and press your key), recording mode (push-to-talk vs toggle), engine selection (MLX Whisper, Whisper, Moonshine), model size, auto-start options
+**General** — Hotkey recorder (click and press your key), optional undo hotkey, recording mode (push-to-talk vs toggle), engine selection (MLX Whisper, Whisper, Moonshine), model size, auto-start options
 
 **Transcription** — Language selection with country flags, custom vocabulary editor with character counter
 
@@ -116,6 +116,20 @@ For advanced users, the config file is at `~/.config/local-stt/config.toml` and 
 | `sound_effects` | `true` | Audio feedback on recording start/stop |
 | `output_mode` | `auto` | Text insertion: `auto`, `injection` (keyboard), `clipboard`, `clipboard_paste` (clipboard + Cmd+V, most compatible) |
 | `max_recording_seconds` | `300` | Maximum recording duration in seconds |
+| `undo_hotkey` | `""` (off) | macOS only. Removes the last dictation insert with Backspaces, see [Undo the last dictation](#undo-the-last-dictation). Must differ from `hotkey` |
+| `undo_window_seconds` | `60` | How long after an insert the undo hotkey still works |
+| `undo_max_chars` | `400` | Longer inserts are not undone |
+
+### Undo the last dictation
+
+Set `undo_hotkey` (for example `ctrl+shift+backspace`) to remove the text the last dictation inserted. The daemon sends one Backspace per character, so it only does this when that is safe:
+
+- the text was inserted with `clipboard_paste` or `injection` (plain `clipboard` mode only copies),
+- the same app is still frontmost and you have not pressed any key since,
+- the insert is younger than `undo_window_seconds` and has not been undone yet,
+- the text has no line break, is at most `undo_max_chars` long and contains no emoji, zero width joiner or combining mark.
+
+Otherwise the overlay shows "Nothing to undo" or "Too long to undo" and the log says why. The undo hotkey is ignored while recording or transcribing.
 
 ### Custom Vocabulary
 

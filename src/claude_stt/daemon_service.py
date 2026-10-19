@@ -22,11 +22,13 @@ from .errors import EngineError, HotkeyError, RecorderError
 from .hotkey import HotkeyListener
 from .keyboard import output_text
 from .recorder import AudioRecorder, RecorderConfig
+from .daemon_undo import UndoHotkeyMixin
 from .sounds import play_sound
+from .undo import UndoTracker
 from .window import get_active_window, WindowInfo
 
 
-class STTDaemon:
+class STTDaemon(UndoHotkeyMixin):
     """Main daemon that coordinates all STT components."""
 
     def __init__(self, config: Optional[Config] = None):
@@ -43,6 +45,8 @@ class STTDaemon:
         self._recorder: Optional[AudioRecorder] = None
         self._engine: Optional[STTEngine] = None
         self._hotkey: Optional[HotkeyListener] = None
+        self._undo: Optional[UndoTracker] = None
+        self._transcribing = False
 
         # Recording state
         self._record_start_time: float = 0
@@ -138,6 +142,7 @@ class STTDaemon:
                 on_stop=self._on_recording_stop,
                 mode=self.config.mode,
             )
+            self._setup_undo()
         except (RecorderError, EngineError, HotkeyError) as exc:
             self._logger.error("%s", exc)
             return False
@@ -166,11 +171,14 @@ class STTDaemon:
             if item is None:
                 break
 
+            self._transcribing = True
             try:
                 self._process_transcription(item)
             except Exception:
                 self._logger.exception("Unhandled error in transcription worker — thread kept alive")
                 self._overlay_send("CANCEL")
+            finally:
+                self._transcribing = False
 
     def _process_transcription(self, item) -> None:
         """Process a single transcription item from the queue."""
@@ -223,8 +231,12 @@ class STTDaemon:
         word_count = len(text.split())
         preview = text[:120].replace("\n", " ")
         self._logger.info("Transcribed %d words: %r", word_count, preview)
-        if not output_text(text, window_info, self.config):
+        token = self._undo.begin_insert() if self._undo else 0
+        inserted = output_text(text, window_info, self.config)
+        if not inserted:
             self._logger.warning("Failed to output transcription")
+        elif self._undo:
+            self._undo.record(inserted, token)
         self._append_history(text, self._last_duration_s, db)
         self._overlay_send(f"DONE {word_count}")
 

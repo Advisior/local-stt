@@ -4,6 +4,7 @@ import logging
 import shutil
 import subprocess
 import time
+from dataclasses import dataclass
 from typing import Optional
 
 try:
@@ -27,6 +28,20 @@ _injection_checked_at: Optional[float] = None
 _injection_cache_ttl = 300.0
 _logger = logging.getLogger(__name__)
 _pynput_warned = False
+
+# Delivery modes after which the text sits in the focused app as typed input.
+INSERT_MODES = ("clipboard_paste", "injection")
+
+
+@dataclass(frozen=True)
+class InsertResult:
+    """What output_text delivered: the exact text and the mode actually used.
+
+    ``mode`` is "clipboard_paste", "injection" or "clipboard" (copied only).
+    """
+
+    text: str
+    mode: str
 
 
 def get_keyboard() -> Controller:
@@ -55,7 +70,7 @@ def _has_wtype() -> bool:
     return shutil.which("wtype") is not None
 
 
-def _output_via_wtype(text: str, config: Config) -> bool:
+def _output_via_wtype(text: str, config: Config) -> Optional[str]:
     """Output text using wtype (Wayland).
 
     Args:
@@ -63,7 +78,7 @@ def _output_via_wtype(text: str, config: Config) -> bool:
         config: Configuration.
 
     Returns:
-        True if successful, False otherwise.
+        The mode used, or None on failure.
     """
     try:
         result = subprocess.run(
@@ -74,15 +89,15 @@ def _output_via_wtype(text: str, config: Config) -> bool:
         if result.returncode == 0:
             if config.sound_effects:
                 play_sound("complete")
-            return True
+            return "injection"
         _logger.warning("wtype failed: %s", result.stderr.decode(errors="replace"))
-        return False
+        return None
     except subprocess.TimeoutExpired:
         _logger.warning("wtype timed out")
-        return False
+        return None
     except Exception:
         _logger.warning("wtype failed", exc_info=True)
-        return False
+        return None
 
 
 def test_injection() -> bool:
@@ -140,7 +155,7 @@ def output_text(
     text: str,
     window_info: Optional[WindowInfo] = None,
     config: Optional[Config] = None,
-) -> bool:
+) -> Optional[InsertResult]:
     """Output transcribed text using the best available method.
 
     Args:
@@ -149,7 +164,7 @@ def output_text(
         config: Configuration (uses default if not provided).
 
     Returns:
-        True if text was output successfully, False otherwise.
+        The delivered text and mode, or None if nothing was output.
     """
     if config is None:
         config = Config.load().validate()
@@ -163,19 +178,34 @@ def output_text(
         _logger.debug("Output mode auto-selected: %s", mode)
 
     if mode == "clipboard_paste":
-        return _output_via_clipboard_paste(text, config)
+        used = _output_via_clipboard_paste(text, config)
+    elif mode != "injection":
+        used = _output_via_clipboard(text, config)
+    else:
+        used = _output_via_injection(text, window_info, config)
+    return InsertResult(text=text, mode=used) if used else None
 
-    if mode != "injection":
-        return _output_via_clipboard(text, config)
 
-    return _output_via_injection(text, window_info, config)
+def undo_last_insert(count: int) -> bool:
+    """Send ``count`` Backspaces to the focused app.
+
+    Call from the daemon's worker thread, never from the hotkey listener.
+    """
+    if count <= 0 or not _PYNPUT_AVAILABLE:
+        return False
+    kb = get_keyboard()
+    for _ in range(count):
+        kb.press(Key.backspace)
+        kb.release(Key.backspace)
+        time.sleep(0.002)  # some apps drop keystrokes under rapid input
+    return True
 
 
 def _output_via_injection(
     text: str,
     window_info: Optional[WindowInfo],
     config: Config,
-) -> bool:
+) -> Optional[str]:
     """Output text by simulating keyboard input.
 
     Args:
@@ -184,7 +214,7 @@ def _output_via_injection(
         config: Configuration.
 
     Returns:
-        True if successful, False otherwise.
+        The mode used, or None on failure.
     """
     try:
         # On Wayland, use wtype
@@ -207,7 +237,7 @@ def _output_via_injection(
         if config.sound_effects:
             play_sound("complete")
 
-        return True
+        return "injection"
     except Exception:
         # Fall back to clipboard on any error
         _logger.warning("Injection failed; falling back to clipboard", exc_info=True)
@@ -259,7 +289,7 @@ def _restore_pasteboard(items: list) -> bool:
         return False
 
 
-def _output_via_clipboard_paste(text: str, config: Config) -> bool:
+def _output_via_clipboard_paste(text: str, config: Config) -> Optional[str]:
     """Output text via clipboard and Cmd+V paste (macOS).
 
     More reliable than character-by-character injection for apps
@@ -297,13 +327,13 @@ def _output_via_clipboard_paste(text: str, config: Config) -> bool:
 
         if config.sound_effects:
             play_sound("complete")
-        return True
+        return "clipboard_paste" if pasted else "clipboard"
     except Exception:
         _logger.warning("clipboard_paste failed; falling back to injection", exc_info=True)
         return _output_via_injection(text, None, config)
 
 
-def _output_via_clipboard(text: str, config: Config) -> bool:
+def _output_via_clipboard(text: str, config: Config) -> Optional[str]:
     """Output text by copying to clipboard.
 
     Args:
@@ -311,29 +341,29 @@ def _output_via_clipboard(text: str, config: Config) -> bool:
         config: Configuration.
 
     Returns:
-        True if successful, False otherwise.
+        The mode used, or None on failure.
     """
     try:
         try:
             import pyperclip
         except ImportError:
             _logger.error("pyperclip not installed; clipboard output unavailable")
-            return False
+            return None
         if hasattr(pyperclip, "is_available") and not pyperclip.is_available():
             _logger.error("No clipboard mechanism available")
-            return False
+            return None
 
         pyperclip.copy(text)
 
         if config.sound_effects:
             play_sound("complete")
 
-        return True
+        return "clipboard"
     except Exception:
         if config.sound_effects:
             play_sound("error")
         _logger.warning("Clipboard output failed", exc_info=True)
-        return False
+        return None
 
 
 def type_text_streaming(text: str) -> bool:

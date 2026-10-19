@@ -12,6 +12,10 @@ class ConfigManager: ObservableObject {
     @Published var corrections: [String: String] = [:]
     @Published var muteOnRecord: Bool = false
     @Published var outputMode: String = "auto"
+    @Published var undoHotkey: String = ""
+    // Not editable here; kept as written so save() round-trips them.
+    var undoWindowSeconds: String = "60.0"
+    var undoMaxChars: String = "400"
 
     // Read-only display
     // Defaults for fresh installs; must match config.py. MLX Whisper needs Apple Silicon.
@@ -137,6 +141,9 @@ class ConfigManager: ObservableObject {
             case "auto_start_daemon": autoStartDaemon = (value == "true")
             case "mute_on_record": muteOnRecord = (value == "true")
             case "output_mode": outputMode = value
+            case "undo_hotkey": undoHotkey = value
+            case "undo_window_seconds": undoWindowSeconds = value
+            case "undo_max_chars": undoMaxChars = value
             default: break
             }
         }
@@ -162,6 +169,24 @@ class ConfigManager: ObservableObject {
             || hotkey.isEmpty {
             NSLog("Claude STT: Invalid hotkey '%@', resetting to default", hotkey)
             hotkey = "ctrl+shift+space"
+            wasValid = false
+        }
+
+        // Undo hotkey: optional, same characters as the record hotkey
+        if !undoHotkey.isEmpty
+            && undoHotkey.range(of: hotkeyPattern, options: .regularExpression) == nil {
+            NSLog("Claude STT: Invalid undo hotkey '%@', clearing", undoHotkey)
+            undoHotkey = ""
+            wasValid = false
+        }
+        // Written unquoted into TOML, so only plain numbers pass
+        let numberPattern = #"^[0-9]+(\.[0-9]+)?$"#
+        if undoWindowSeconds.range(of: numberPattern, options: .regularExpression) == nil {
+            undoWindowSeconds = "60.0"
+            wasValid = false
+        }
+        if undoMaxChars.range(of: #"^[0-9]+$"#, options: .regularExpression) == nil {
+            undoMaxChars = "400"
             wasValid = false
         }
 
@@ -217,6 +242,9 @@ class ConfigManager: ObservableObject {
         lines.append("sound_effects = \(soundEffects)")
         lines.append("auto_start_daemon = \(autoStartDaemon)")
         lines.append("mute_on_record = \(muteOnRecord)")
+        lines.append("undo_hotkey = \"\(escape(undoHotkey))\"")
+        lines.append("undo_window_seconds = \(undoWindowSeconds)")
+        lines.append("undo_max_chars = \(undoMaxChars)")
 
         if !language.isEmpty {
             lines.append("language = \"\(escape(language))\"")

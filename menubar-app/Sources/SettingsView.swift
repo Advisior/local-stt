@@ -95,6 +95,13 @@ private struct GeneralTab: View {
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
+                    LabeledContent("Undo last dictation") {
+                        HotkeyRecorderView(hotkeyString: $config.undoHotkey)
+                    }
+                    settingHint("Optional. Removes the last dictation with Backspaces, until you type or switch apps")
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
                     LabeledContent("Mode") {
                         Picker("", selection: $config.mode) {
                             Text("Push-to-Talk").tag("push-to-talk")
