@@ -1,6 +1,7 @@
 """Configuration management for claude-stt."""
 
 import logging
+import math
 import os
 import platform
 import tempfile
@@ -339,14 +340,15 @@ class Config:
             self.undo_window_seconds = float(self.undo_window_seconds)
         except (TypeError, ValueError):
             self.undo_window_seconds = -1.0
-        if not self.undo_window_seconds > 0:
+        # inf would keep an insert undoable forever
+        if not (math.isfinite(self.undo_window_seconds) and self.undo_window_seconds > 0):
             logger.warning("Invalid undo_window_seconds; defaulting to %s",
                            Config.undo_window_seconds)
             self.undo_window_seconds = Config.undo_window_seconds
 
         try:
             self.undo_max_chars = int(self.undo_max_chars)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):  # OverflowError: 1e999 -> inf
             self.undo_max_chars = 0
         if self.undo_max_chars < 1:
             logger.warning("Invalid undo_max_chars; defaulting to %s", Config.undo_max_chars)

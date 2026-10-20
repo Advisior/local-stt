@@ -131,6 +131,30 @@ class UndoConfigTests(unittest.TestCase):
         self.assertEqual(config.undo_window_seconds, 60)
         self.assertEqual(config.undo_max_chars, 400)
 
+    def test_ac4_given_an_infinite_undo_window_when_loading_then_default_and_warning(self):
+        for raw in ("1e999", "inf", "+inf"):
+            with self.subTest(raw=raw):
+                (self.config_dir / "config.toml").write_text(
+                    f'[claude-stt]\nhotkey = "f5"\nundo_window_seconds = {raw}\n'
+                )
+                with self.assertLogs("claude_stt.config", level="WARNING") as logs:
+                    config = Config.load()
+                self.assertEqual(config.hotkey, "f5")
+                self.assertEqual(config.undo_window_seconds, 60)
+                self.assertIn("Invalid undo_window_seconds", "\n".join(logs.output))
+
+    def test_ac6_given_an_infinite_undo_max_chars_when_loading_then_default_and_warning(self):
+        for raw in ("1e999", "inf", "nan"):
+            with self.subTest(raw=raw):
+                (self.config_dir / "config.toml").write_text(
+                    f'[claude-stt]\nhotkey = "f5"\nundo_max_chars = {raw}\n'
+                )
+                with self.assertLogs("claude_stt.config", level="WARNING") as logs:
+                    config = Config.load()
+                self.assertEqual(config.hotkey, "f5")  # rest of the file still applies
+                self.assertEqual(config.undo_max_chars, 400)
+                self.assertIn("Invalid undo_max_chars", "\n".join(logs.output))
+
     def test_given_padded_undo_hotkey_when_validated_then_it_is_stripped(self):
         config = Config(undo_hotkey="  ctrl+shift+backspace ").validate()
         self.assertEqual(config.undo_hotkey, "ctrl+shift+backspace")

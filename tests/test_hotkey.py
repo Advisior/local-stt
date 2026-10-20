@@ -382,5 +382,21 @@ class OtherKeyHookTests(unittest.TestCase):
         self.assertEqual(len(self.other_keys), 1)
 
 
+class PynputPinTests(unittest.TestCase):
+    """pynput passes ``injected`` to callbacks only from 1.8 on (#45)."""
+
+    def test_ac1_ac5_given_pyproject_when_reading_pynput_pin_then_minimum_is_1_8(self):
+        import re
+        import tomllib
+        from pathlib import Path
+
+        pyproject = Path(__file__).resolve().parent.parent / "pyproject.toml"
+        deps = tomllib.loads(pyproject.read_text())["project"]["dependencies"]
+        pin = next(d for d in deps if d.startswith("pynput"))
+        match = re.fullmatch(r"pynput>=(\d+)\.(\d+)(?:\.\d+)?", pin.replace(" ", ""))
+        self.assertIsNotNone(match, pin)
+        self.assertGreaterEqual((int(match[1]), int(match[2])), (1, 8), pin)
+
+
 if __name__ == "__main__":
     unittest.main()

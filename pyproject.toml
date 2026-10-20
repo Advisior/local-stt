@@ -13,7 +13,7 @@ keywords = ["speech-to-text", "stt", "voice", "dictation", "whisper", "mlx"]
 dependencies = [
     "useful-moonshine-onnx",
     "sounddevice>=0.4",
-    "pynput>=1.7",
+    "pynput>=1.8",
     "pyperclip>=1.8",
     "numpy>=1.24",
     "tomli>=2.0",
