@@ -24,8 +24,7 @@ class UndoTrackerTests(unittest.TestCase):
         )
 
     def _insert(self, text="Hallo Welt. ", mode="clipboard_paste"):
-        token = self.tracker.begin_insert()
-        self.tracker.record(InsertResult(text=text, mode=mode), token)
+        self.tracker.record(InsertResult(text=text, mode=mode), self.tracker.begin_insert())
 
     def _assert_refused(self, decision, hint=NOTHING_TO_UNDO):
         self.assertEqual(decision.action, "refuse")
@@ -66,6 +65,12 @@ class UndoTrackerTests(unittest.TestCase):
         self._insert()
         self._assert_refused(self.tracker.check(busy=False))
 
+    def test_ac3_given_an_app_switch_during_the_paste_when_undo_in_new_app_then_nothing(self):
+        start = self.tracker.begin_insert()
+        self.app = "com.apple.TextEdit"  # user switches while paste and restore run
+        self.tracker.record(InsertResult(text="Hallo. ", mode="clipboard_paste"), start)
+        self._assert_refused(self.tracker.check(busy=False))
+
     def test_ac4_given_an_insert_older_than_the_window_when_undo_then_nothing_to_undo(self):
         self._insert()
         self.clock.now += 60.5
@@ -82,9 +87,9 @@ class UndoTrackerTests(unittest.TestCase):
         self._assert_refused(self.tracker.check(busy=False))
 
     def test_ac5_given_a_key_during_the_paste_when_recorded_then_insert_is_invalid(self):
-        token = self.tracker.begin_insert()
+        start = self.tracker.begin_insert()
         self.tracker.invalidate()  # user typed while the paste was in flight
-        self.tracker.record(InsertResult(text="Hallo. ", mode="clipboard_paste"), token)
+        self.tracker.record(InsertResult(text="Hallo. ", mode="clipboard_paste"), start)
         self._assert_refused(self.tracker.check(busy=False))
 
     def test_ac5_given_a_key_before_the_insert_when_undo_then_it_still_works(self):
@@ -111,6 +116,10 @@ class UndoTrackerTests(unittest.TestCase):
             with self.subTest(text=text):
                 self._insert(text)
                 self._assert_refused(self.tracker.check(busy=False))
+
+    def test_ac6_given_a_variation_selector_when_undo_then_nothing_to_undo(self):
+        self._insert("heart \u2764\ufe0f. ")
+        self._assert_refused(self.tracker.check(busy=False))
 
     def test_ac7_given_no_insert_since_start_when_undo_then_nothing_to_undo(self):
         self._assert_refused(self.tracker.check(busy=False))

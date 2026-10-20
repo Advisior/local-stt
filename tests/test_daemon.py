@@ -184,6 +184,29 @@ class UndoWiringTests(unittest.TestCase):
             d._on_undo_hotkey()
         send.assert_called_once_with(12)
 
+    def test_ac3_given_an_app_switch_during_output_when_undo_in_new_app_then_nothing_sent(self):
+        from claude_stt import daemon_service, daemon_undo
+        from claude_stt.keyboard import InsertResult
+
+        d = self._armed()
+        d._engine = mock.Mock()
+        d._engine.transcribe.return_value = "Hallo Welt"
+        inserted = InsertResult(text="Hallo Welt. ", mode="clipboard_paste")
+        frontmost = ["com.mitchellh.ghostty"]
+        d._undo._frontmost_app = lambda: frontmost[0]
+
+        def paste_then_switch(*_args):
+            frontmost[0] = "com.apple.TextEdit"
+            return inserted
+
+        audio = daemon_service.np.ones(16000, dtype="float32") * 0.1
+        with mock.patch.object(daemon_service, "output_text", side_effect=paste_then_switch), \
+                mock.patch.object(d, "_append_history"), \
+                mock.patch.object(daemon_undo, "undo_last_insert") as send:
+            d._process_transcription((audio, None))
+            d._on_undo_hotkey()
+        send.assert_not_called()
+
     def test_ac2_given_nothing_to_undo_when_hotkey_then_hint_and_warning_sound(self):
         from claude_stt import daemon_undo
 

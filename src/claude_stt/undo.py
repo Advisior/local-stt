@@ -35,6 +35,14 @@ class UndoDecision:
     reason: str = ""
 
 
+@dataclass(frozen=True)
+class InsertStart:
+    """Snapshot taken right before output_text, handed back to record()."""
+
+    token: int  # key-down generation before the insert started
+    bundle_id: Optional[str]  # frontmost app the text is pasted into
+
+
 @dataclass
 class _Insert:
     text: str
@@ -68,21 +76,25 @@ class UndoTracker:
         with self._lock:
             self._generation += 1
 
-    def begin_insert(self) -> int:
-        """Call right before output; keys typed during the paste then count."""
-        with self._lock:
-            return self._generation
+    def begin_insert(self) -> InsertStart:
+        """Call right before output_text.
 
-    def record(self, result: InsertResult, token: int) -> None:
-        """Remember what output_text delivered."""
+        Keys typed during the paste then count, and the target app is fixed
+        before the paste and restore pause give the user time to switch apps.
+        """
         bundle_id = self._frontmost_app()
+        with self._lock:
+            return InsertStart(token=self._generation, bundle_id=bundle_id)
+
+    def record(self, result: InsertResult, start: InsertStart) -> None:
+        """Remember what output_text delivered."""
         with self._lock:
             self._last = _Insert(
                 text=result.text,
                 mode=result.mode,
-                bundle_id=bundle_id,
+                bundle_id=start.bundle_id,
                 at=self._clock(),
-                token=token,
+                token=start.token,
             )
 
     def check(self, busy: bool) -> UndoDecision:
@@ -141,6 +153,7 @@ def _unsafe_char(text: str) -> str:
             return f"non-BMP character U+{ord(ch):X}"
         if ch == _ZWJ:
             return "zero width joiner"
-        if unicodedata.combining(ch):
+        if unicodedata.category(ch).startswith("M"):
+            # Mn/Mc/Me, including variation selectors like U+FE0F
             return f"combining mark U+{ord(ch):04X}"
     return ""

@@ -231,12 +231,12 @@ class STTDaemon(UndoHotkeyMixin):
         word_count = len(text.split())
         preview = text[:120].replace("\n", " ")
         self._logger.info("Transcribed %d words: %r", word_count, preview)
-        token = self._undo.begin_insert() if self._undo else 0
+        start = self._undo.begin_insert() if self._undo else None
         inserted = output_text(text, window_info, self.config)
         if not inserted:
             self._logger.warning("Failed to output transcription")
         elif self._undo:
-            self._undo.record(inserted, token)
+            self._undo.record(inserted, start)
         self._append_history(text, self._last_duration_s, db)
         self._overlay_send(f"DONE {word_count}")
 

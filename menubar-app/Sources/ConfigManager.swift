@@ -156,6 +156,8 @@ class ConfigManager: ObservableObject {
     private static let validEngines = ["mlx", "whisper", "moonshine", "parakeet"]
     private static let validModes = ["push-to-talk", "toggle"]
     private static let maxInitialPromptLength = 1000
+    /// TOML 1.0 decimal integer or float without sign "-", inf or nan.
+    static let tomlNumberPattern = #"^\+?(0|[1-9](_?[0-9])*)(\.[0-9](_?[0-9])*)?([eE][+-]?[0-9](_?[0-9])*)?$"#
 
     /// Validates and sanitizes all config fields before saving.
     /// Returns true if all fields are valid, false if any were corrected.
@@ -179,13 +181,13 @@ class ConfigManager: ObservableObject {
             undoHotkey = ""
             wasValid = false
         }
-        // Written unquoted into TOML, so only plain numbers pass
-        let numberPattern = #"^[0-9]+(\.[0-9]+)?$"#
-        if undoWindowSeconds.range(of: numberPattern, options: .regularExpression) == nil {
+        // Written back unquoted and unchanged, so any non-negative TOML
+        // decimal number passes (underscores, exponent); the daemon converts.
+        if undoWindowSeconds.range(of: Self.tomlNumberPattern, options: .regularExpression) == nil {
             undoWindowSeconds = "60.0"
             wasValid = false
         }
-        if undoMaxChars.range(of: #"^[0-9]+$"#, options: .regularExpression) == nil {
+        if undoMaxChars.range(of: Self.tomlNumberPattern, options: .regularExpression) == nil {
             undoMaxChars = "400"
             wasValid = false
         }
