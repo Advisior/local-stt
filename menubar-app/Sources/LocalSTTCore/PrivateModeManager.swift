@@ -13,7 +13,13 @@ final class PrivateModeManager: ObservableObject {
     @Published private(set) var until: Date?
     @Published private(set) var now = Date()
 
+    /// The duration behind the current state, when known (see `PrivateModeDuration.resolve`).
+    @Published private(set) var duration: PrivateModeDuration?
+
     private var timer: Timer?
+    private let defaults: UserDefaults
+    private static let recordDurationKey = "privateModeDuration"
+    private static let recordUntilKey = "privateModeUntil"
 
     static var stateURL: URL { ConfigManager.configDir.appendingPathComponent("private_mode.json") }
 
@@ -24,7 +30,8 @@ final class PrivateModeManager: ObservableObject {
         return f
     }()
 
-    init() {
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
         refresh()
         let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in self?.refresh() }
         RunLoop.main.add(timer, forMode: .common)
@@ -33,27 +40,32 @@ final class PrivateModeManager: ObservableObject {
 
     deinit { timer?.invalidate() }
 
-    /// Turn on for `duration` seconds, or until turned off when nil.
-    func enable(duration: TimeInterval?) {
-        let value: Any = duration.map { Self.formatter.string(from: Date().addingTimeInterval($0)) } ?? NSNull()
+    /// Turn on for the chosen duration. The file keeps its format; the choice
+    /// itself is noted in the app's defaults for the menu checkmark.
+    func enable(_ choice: PrivateModeDuration) {
+        let end = choice.seconds.map { Date().addingTimeInterval($0) }
+        let value: Any = end.map { Self.formatter.string(from: $0) } ?? NSNull()
         guard let data = try? JSONSerialization.data(withJSONObject: ["until": value]) else { return }
         try? FileManager.default.createDirectory(at: ConfigManager.configDir, withIntermediateDirectories: true)
         try? data.write(to: Self.stateURL, options: .atomic)
+        if let end {
+            // Store the end time as written, so it compares equal after reading the file back.
+            defaults.set(choice.rawValue, forKey: Self.recordDurationKey)
+            defaults.set(Self.formatter.string(from: end), forKey: Self.recordUntilKey)
+        }
         refresh()
+    }
+
+    /// Snapshot for the status menu.
+    var status: PrivateModeStatus {
+        guard isActive else { return .off }
+        let remaining = until.map { max(0, Int($0.timeIntervalSince(now).rounded(.up))) }
+        return PrivateModeStatus(isActive: true, remainingSeconds: remaining, duration: duration)
     }
 
     func disable() {
         try? FileManager.default.removeItem(at: Self.stateURL)
         refresh()
-    }
-
-    /// "12:34 left", "1:02:03 left" or "On" for "until turned off".
-    var statusText: String {
-        guard let until = until else { return "On" }
-        let remaining = max(0, Int(until.timeIntervalSince(now).rounded(.up)))
-        let h = remaining / 3600, m = (remaining % 3600) / 60, s = remaining % 60
-        let clock = h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%d:%02d", m, s)
-        return "\(clock) left"
     }
 
     private func refresh() {
@@ -65,7 +77,18 @@ final class PrivateModeManager: ObservableObject {
         }
         if isActive != state.active { isActive = state.active }
         if until != state.until { until = state.until }
+        let resolved = PrivateModeDuration.resolve(isActive: state.active, until: state.until, record: record)
+        if duration != resolved { duration = resolved }
         if state.active { now = current }
+    }
+
+    private var record: PrivateModeRecord? {
+        guard let raw = defaults.string(forKey: Self.recordDurationKey),
+              let duration = PrivateModeDuration(rawValue: raw),
+              let untilString = defaults.string(forKey: Self.recordUntilKey),
+              let until = Self.formatter.date(from: untilString)
+        else { return nil }
+        return PrivateModeRecord(duration: duration, until: until)
     }
 
     private static func readState(now: Date) -> (active: Bool, until: Date?, expired: Bool) {

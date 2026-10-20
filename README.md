@@ -22,7 +22,7 @@ Free, local, private speech-to-text for your Mac. No cloud, no API costs, no dat
 
 | | Feature | Details |
 |---|---------|---------|
-| 🎙️ | **Native Menu Bar App** | Always-on macOS status bar control with popover UI |
+| 🎙️ | **Native Menu Bar App** | Always-on macOS status bar control with a native menu |
 | 🔒 | **100% Local** | MLX Whisper runs on Apple Silicon GPU — no cloud, no API keys |
 | ⚡ | **Fast** | ~2-3s transcription (medium model) on M-series chips |
 | 🇩🇪 | **14 Languages** | German, English, French, Spanish, and 10 more |
