@@ -3,6 +3,7 @@
 import logging
 import shutil
 import subprocess
+import sys
 import time
 from typing import Optional
 
@@ -27,6 +28,12 @@ _injection_checked_at: Optional[float] = None
 _injection_cache_ttl = 300.0
 _logger = logging.getLogger(__name__)
 _pynput_warned = False
+_IS_MACOS = sys.platform == "darwin"
+
+# nspasteboard.org markers: clipboard managers skip concealed and transient
+# items, so private-mode dictations do not end up in their history.
+CONCEALED_TYPE = "org.nspasteboard.ConcealedType"
+TRANSIENT_TYPE = "org.nspasteboard.TransientType"
 
 
 def get_keyboard() -> Controller:
@@ -140,6 +147,7 @@ def output_text(
     text: str,
     window_info: Optional[WindowInfo] = None,
     config: Optional[Config] = None,
+    private: bool = False,
 ) -> bool:
     """Output transcribed text using the best available method.
 
@@ -147,6 +155,7 @@ def output_text(
         text: The text to output.
         window_info: Optional window to restore focus to before typing.
         config: Configuration (uses default if not provided).
+        private: Private mode; pasteboard writes are marked concealed.
 
     Returns:
         True if text was output successfully, False otherwise.
@@ -163,18 +172,19 @@ def output_text(
         _logger.debug("Output mode auto-selected: %s", mode)
 
     if mode == "clipboard_paste":
-        return _output_via_clipboard_paste(text, config)
+        return _output_via_clipboard_paste(text, config, private)
 
     if mode != "injection":
-        return _output_via_clipboard(text, config)
+        return _output_via_clipboard(text, config, private)
 
-    return _output_via_injection(text, window_info, config)
+    return _output_via_injection(text, window_info, config, private)
 
 
 def _output_via_injection(
     text: str,
     window_info: Optional[WindowInfo],
     config: Config,
+    private: bool = False,
 ) -> bool:
     """Output text by simulating keyboard input.
 
@@ -192,11 +202,11 @@ def _output_via_injection(
             if _has_wtype():
                 return _output_via_wtype(text, config)
             _logger.warning("wtype not available; falling back to clipboard")
-            return _output_via_clipboard(text, config)
+            return _output_via_clipboard(text, config, private)
 
         if not _PYNPUT_AVAILABLE:
             _warn_pynput_missing()
-            return _output_via_clipboard(text, config)
+            return _output_via_clipboard(text, config, private)
         # Skip focus restore - type into whatever window is currently active.
         # Focus restore via AppleScript can activate wrong windows (e.g. Zed).
 
@@ -211,7 +221,7 @@ def _output_via_injection(
     except Exception:
         # Fall back to clipboard on any error
         _logger.warning("Injection failed; falling back to clipboard", exc_info=True)
-        return _output_via_clipboard(text, config)
+        return _output_via_clipboard(text, config, private)
 
 
 def _snapshot_pasteboard() -> Optional[list]:
@@ -259,23 +269,45 @@ def _restore_pasteboard(items: list) -> bool:
         return False
 
 
-def _output_via_clipboard_paste(text: str, config: Config) -> bool:
+def _copy_concealed(text: str) -> None:
+    """Put text on the general pasteboard marked concealed and transient.
+
+    Raises on failure so callers never fall back to an unmarked copy.
+    """
+    from AppKit import NSPasteboard, NSPasteboardItem, NSPasteboardTypeString
+
+    item = NSPasteboardItem.alloc().init()
+    item.setString_forType_(text, NSPasteboardTypeString)
+    item.setString_forType_("", CONCEALED_TYPE)
+    item.setString_forType_("", TRANSIENT_TYPE)
+    pb = NSPasteboard.generalPasteboard()
+    pb.clearContents()
+    if not pb.writeObjects_([item]):
+        raise RuntimeError("concealed pasteboard write failed")
+
+
+def _output_via_clipboard_paste(text: str, config: Config, private: bool = False) -> bool:
     """Output text via clipboard and Cmd+V paste (macOS).
 
     More reliable than character-by-character injection for apps
     that drop keystrokes under rapid input.
     """
     try:
-        try:
-            import pyperclip
-        except ImportError:
-            _logger.warning("pyperclip not installed; falling back to injection")
-            return _output_via_injection(text, None, config)
+        concealed = private and _IS_MACOS
+        if not concealed:
+            try:
+                import pyperclip
+            except ImportError:
+                _logger.warning("pyperclip not installed; falling back to injection")
+                return _output_via_injection(text, None, config, private)
 
         # Full pasteboard snapshot (text, images, files) for restore after paste
         snapshot = _snapshot_pasteboard()
 
-        pyperclip.copy(text)
+        if concealed:
+            _copy_concealed(text)
+        else:
+            pyperclip.copy(text)
         time.sleep(0.05)  # let clipboard settle
 
         pasted = False
@@ -300,20 +332,26 @@ def _output_via_clipboard_paste(text: str, config: Config) -> bool:
         return True
     except Exception:
         _logger.warning("clipboard_paste failed; falling back to injection", exc_info=True)
-        return _output_via_injection(text, None, config)
+        return _output_via_injection(text, None, config, private)
 
 
-def _output_via_clipboard(text: str, config: Config) -> bool:
+def _output_via_clipboard(text: str, config: Config, private: bool = False) -> bool:
     """Output text by copying to clipboard.
 
     Args:
         text: The text to copy.
         config: Configuration.
+        private: Private mode; on macOS the copy is marked concealed.
 
     Returns:
         True if successful, False otherwise.
     """
     try:
+        if private and _IS_MACOS:
+            _copy_concealed(text)
+            if config.sound_effects:
+                play_sound("complete")
+            return True
         try:
             import pyperclip
         except ImportError:

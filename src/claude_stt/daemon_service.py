@@ -14,6 +14,7 @@ from typing import Optional
 
 import numpy as np
 
+from . import history
 from .config import Config
 from .engine_factory import build_engine
 from .formatter import fix_transcription_errors, format_paragraphs
@@ -221,18 +222,21 @@ class STTDaemon:
         text = format_paragraphs(text)
 
         word_count = len(text.split())
-        preview = text[:120].replace("\n", " ")
-        self._logger.info("Transcribed %d words: %r", word_count, preview)
-        if not output_text(text, window_info, self.config):
+        # Never log transcript text: the log is not covered by private mode
+        # or history deletion.
+        self._logger.info("Transcribed %d words", word_count)
+        private = history.private_mode_active()
+        if not output_text(text, window_info, self.config, private=private):
             self._logger.warning("Failed to output transcription")
-        self._append_history(text, self._last_duration_s, db)
+        if private:
+            self._logger.info("Private mode on: transcription not added to history")
+        else:
+            self._append_history(text, self._last_duration_s, db)
         self._overlay_send(f"DONE {word_count}")
 
     def _append_history(self, text: str, duration_s: float, db: float) -> None:
         """Append transcription to history file, keeping last 100 entries."""
-        import json
         from datetime import datetime
-        history_path = Config.get_config_dir() / "history.jsonl"
         entry = {
             "timestamp": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
             "text": text,
@@ -240,15 +244,7 @@ class STTDaemon:
             "db": round(float(db), 1),
             "words": len(text.split()),
         }
-        entries = []
-        if history_path.exists():
-            try:
-                entries = [json.loads(line) for line in history_path.read_text().splitlines() if line.strip()]
-            except Exception:
-                entries = []
-        entries.append(entry)
-        entries = entries[-100:]
-        history_path.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
+        history.append_entry(entry)
 
     def _mute_system_audio(self) -> None:
         """Mute system output and store original volume for restore."""

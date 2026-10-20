@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-20
+
+### Added
+- Delete single entries in the Transcript History window. The app and the daemon both lock `history.lock` and replace `history.jsonl` atomically, so a delete and a new dictation at the same moment keep both effects (#47)
+- Private mode in the menu bar popover: 15 minutes, 1 hour or until turned off. While it is on, dictations are still typed or pasted but not added to the history, pasteboard writes are marked `org.nspasteboard.ConcealedType` and `TransientType` so clipboard managers skip them, and the menu bar icon changes. The state lives in `private_mode.json` and survives restarts of app and daemon; an unreadable state file counts as on (#47)
+
+### Changed
+- `daemon.log` no longer contains any transcript text, only the word count (#47)
+
 ## [0.7.0] - 2026-09-25
 
 ### Changed

@@ -3,6 +3,7 @@ import SwiftUI
 struct MenuPopoverView: View {
     @ObservedObject var daemon: DaemonManager
     @ObservedObject var config: ConfigManager
+    @ObservedObject var privateMode: PrivateModeManager
     var onSettings: () -> Void
     var onHistory: () -> Void
     var onOpenLog: () -> Void
@@ -23,6 +24,12 @@ struct MenuPopoverView: View {
             if !daemon.permissionsReady && daemon.isRunning {
                 permissionsWarning
             }
+
+            Divider()
+                .padding(.horizontal, 12)
+
+            // MARK: - Private Mode
+            privateModeSection
 
             Divider()
                 .padding(.horizontal, 12)
@@ -116,6 +123,41 @@ struct MenuPopoverView: View {
             }
         }
         .padding(.vertical, 6)
+    }
+
+    // MARK: - Private Mode
+
+    private var privateModeSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 10) {
+                Image(systemName: "eye.slash")
+                    .font(.system(size: 13))
+                    .foregroundStyle(privateMode.isActive ? Color.purple : Color.primary)
+                    .frame(width: 20, alignment: .center)
+                Text("Private mode")
+                    .font(.system(size: 13))
+                Spacer()
+                if privateMode.isActive {
+                    Text(privateMode.statusText)
+                        .font(.system(size: 11).monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            HStack(spacing: 6) {
+                if privateMode.isActive {
+                    Button("Turn off") { privateMode.disable() }
+                } else {
+                    Button("15 minutes") { privateMode.enable(duration: 15 * 60) }
+                    Button("1 hour") { privateMode.enable(duration: 60 * 60) }
+                    Button("Until turned off") { privateMode.enable(duration: nil) }
+                }
+            }
+            .controlSize(.small)
+            .padding(.leading, 30)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
     }
 
     // MARK: - Tools

@@ -6,6 +6,7 @@ class MenuBarController: NSObject {
     private var statusItem: NSStatusItem!
     private let daemon = DaemonManager()
     private let config = ConfigManager()
+    private let privateMode = PrivateModeManager()
     private var cancellables = Set<AnyCancellable>()
     private var settingsWindow: NSWindow?
     private var historyWindow: NSWindow?
@@ -18,9 +19,10 @@ class MenuBarController: NSObject {
         setupPopover()
 
         daemon.$isRunning
+            .combineLatest(privateMode.$isActive)
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] running in
-                self?.applyIcon(running: running)
+            .sink { [weak self] running, isPrivate in
+                self?.applyIcon(running: running, isPrivate: isPrivate)
             }
             .store(in: &cancellables)
 
@@ -39,7 +41,7 @@ class MenuBarController: NSObject {
         statusItem = NSStatusBar.system.statusItem(
             withLength: NSStatusItem.variableLength
         )
-        applyIcon(running: false)
+        applyIcon(running: false, isPrivate: privateMode.isActive)
 
         if let button = statusItem.button {
             button.action = #selector(onStatusItemClicked)
@@ -56,6 +58,7 @@ class MenuBarController: NSObject {
         let popoverView = MenuPopoverView(
             daemon: daemon,
             config: config,
+            privateMode: privateMode,
             onSettings: { [weak self] in
                 self?.closePopover()
                 self?.onOpenSettings()
@@ -77,11 +80,12 @@ class MenuBarController: NSObject {
         popover.contentViewController = NSHostingController(rootView: popoverView)
     }
 
-    private func applyIcon(running: Bool) {
-        let symbolName = running ? "mic.fill" : "mic.slash.fill"
+    private func applyIcon(running: Bool, isPrivate: Bool) {
+        // Private mode gets its own glyph so it is visible at a glance.
+        let symbolName = isPrivate ? "eye.slash.fill" : running ? "mic.fill" : "mic.slash.fill"
         if let image = NSImage(
             systemSymbolName: symbolName,
-            accessibilityDescription: "Local-STT"
+            accessibilityDescription: isPrivate ? "Local-STT (private mode)" : "Local-STT"
         ) {
             image.isTemplate = true
             statusItem.button?.image = image

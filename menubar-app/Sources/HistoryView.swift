@@ -1,7 +1,9 @@
 import SwiftUI
 
 struct HistoryEntry: Identifiable {
-    var id: String { timestamp + text.prefix(40) }
+    // Line index keeps ids unique when two entries share timestamp and text.
+    var id: String { "\(line)|\(timestamp)|\(text.prefix(40))" }
+    let line: Int
     let timestamp: String
     let text: String
     let durationS: Double
@@ -85,7 +87,8 @@ struct HistoryView: View {
                                 pauseRefresh: $pauseRefresh,
                                 onSaveCorrection: { wrong, right in
                                     config.addCorrection(wrong: wrong, right: right)
-                                }
+                                },
+                                onDelete: { deleteEntry(entry) }
                             )
                         }
                     }
@@ -98,17 +101,24 @@ struct HistoryView: View {
         .onReceive(refreshTimer) { _ in if !pauseRefresh { loadHistory() } }
     }
 
+    private func deleteEntry(_ entry: HistoryEntry) {
+        // No match (already trimmed or deleted elsewhere) changes nothing.
+        HistoryStore.deleteEntry(timestamp: entry.timestamp, text: entry.text)
+        loadHistory()
+    }
+
     private func loadHistory() {
         let historyURL = ConfigManager.configDir.appendingPathComponent("history.jsonl")
         guard let content = try? String(contentsOf: historyURL) else { return }
         let lines = content.split(separator: "\n", omittingEmptySubsequences: true)
-        let newEntries: [HistoryEntry] = lines.compactMap { line -> HistoryEntry? in
+        let newEntries: [HistoryEntry] = lines.enumerated().compactMap { index, line -> HistoryEntry? in
             guard let data = line.data(using: .utf8),
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let text = json["text"] as? String,
                   let timestamp = json["timestamp"] as? String
             else { return nil }
             return HistoryEntry(
+                line: index,
                 timestamp: timestamp,
                 text: text,
                 durationS: json["duration_s"] as? Double ?? 0,
@@ -172,6 +182,7 @@ struct EntryCard: View {
     var searchHighlight: String = ""
     @Binding var pauseRefresh: Bool
     var onSaveCorrection: (String, String) -> Void
+    var onDelete: () -> Void
 
     @State private var selectedRange: ClosedRange<Int>? = nil
     @State private var showPopover = false
@@ -236,6 +247,13 @@ struct EntryCard: View {
                     .font(.caption)
                 }
                 .buttonStyle(.plain)
+                Button(action: onDelete) {
+                    Image(systemName: "trash")
+                        .foregroundColor(.secondary)
+                        .font(.caption)
+                }
+                .buttonStyle(.plain)
+                .help("Delete this entry")
             }
 
             // Words as clickable tokens
