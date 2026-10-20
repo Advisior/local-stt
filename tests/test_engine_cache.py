@@ -41,13 +41,30 @@ class MLXModelCacheTests(unittest.TestCase):
             self.assertTrue(MLXWhisperEngine(model_name="large-v3-turbo").is_model_cached())
 
     def test_legacy_npz_weights_count_as_cached(self):
-        fake = _FakeCache(("mlx-community/whisper-medium", ("config.json", "weights.npz")))
+        fake = _FakeCache(("mlx-community/whisper-medium-mlx", ("config.json", "weights.npz")))
         with mock.patch.object(hf_cache, "is_cached", fake):
             self.assertTrue(MLXWhisperEngine(model_name="medium").is_model_cached())
 
     def test_not_cached(self):
         with mock.patch.object(hf_cache, "is_cached", _FakeCache()):
             self.assertFalse(MLXWhisperEngine(model_name="medium").is_model_cached())
+
+
+class MLXModelMapTests(unittest.TestCase):
+    def test_short_names_resolve_to_existing_mlx_community_repos(self):
+        # Repos without the -mlx suffix do not exist on Hugging Face (#52).
+        expected = {
+            "tiny": "mlx-community/whisper-tiny-mlx",
+            "base": "mlx-community/whisper-base-mlx",
+            "small": "mlx-community/whisper-small-mlx",
+            "medium": "mlx-community/whisper-medium-mlx",
+            "large": "mlx-community/whisper-large-v3-mlx",
+            "large-v3": "mlx-community/whisper-large-v3-mlx",
+            "large-v3-turbo": "mlx-community/whisper-large-v3-turbo",
+        }
+        for name, repo in expected.items():
+            with self.subTest(name=name):
+                self.assertEqual(MLXWhisperEngine(model_name=name)._hf_repo, repo)
 
 
 class MoonshineModelCacheTests(unittest.TestCase):
