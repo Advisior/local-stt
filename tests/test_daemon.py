@@ -195,7 +195,7 @@ class UndoWiringTests(unittest.TestCase):
         frontmost = ["com.mitchellh.ghostty"]
         d._undo._frontmost_app = lambda: frontmost[0]
 
-        def paste_then_switch(*_args):
+        def paste_then_switch(*_args, **_kwargs):
             frontmost[0] = "com.apple.TextEdit"
             return inserted
 

@@ -149,11 +149,13 @@ class UndoTracker:
 def _unsafe_char(text: str) -> str:
     """Describe the first character a single Backspace may not remove cleanly."""
     for ch in text:
+        # No code point in the reason: it goes to daemon.log, which must
+        # never hold any part of the transcript (#47 AC-13).
         if ord(ch) > 0xFFFF:
-            return f"non-BMP character U+{ord(ch):X}"
+            return "non-BMP character"
         if ch == _ZWJ:
             return "zero width joiner"
         if unicodedata.category(ch).startswith("M"):
             # Mn/Mc/Me, including variation selectors like U+FE0F
-            return f"combining mark U+{ord(ch):04X}"
+            return "combining mark"
     return ""

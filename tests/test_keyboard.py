@@ -1,3 +1,6 @@
+import logging
+import sys
+import types
 import unittest
 from unittest import mock
 
@@ -17,7 +20,7 @@ class KeyboardOutputTests(unittest.TestCase):
             keyboard._injection_capable = None
             captured = {}
 
-            def fake_clipboard(text, config):
+            def fake_clipboard(text, config, private=False):
                 captured["text"] = text
                 return "clipboard"
 
@@ -33,6 +36,113 @@ class KeyboardOutputTests(unittest.TestCase):
             keyboard._injection_checked_at = original_checked
             keyboard._injection_capable = original_capable
 
+
+class _FakeItem:
+    def __init__(self):
+        self.values = {}
+
+    @classmethod
+    def alloc(cls):
+        return cls()
+
+    def init(self):
+        return self
+
+    def setString_forType_(self, value, kind):
+        self.values[str(kind)] = value
+        return True
+
+
+class _FakePasteboard:
+    def __init__(self, write_ok=True):
+        self.written = []
+        self.write_ok = write_ok
+
+    def pasteboardItems(self):
+        return []
+
+    def clearContents(self):
+        self.written = []
+
+    def writeObjects_(self, items):
+        self.written = list(items)
+        return self.write_ok
+
+
+def _fake_appkit(pasteboard):
+    module = types.ModuleType("AppKit")
+    module.NSPasteboard = types.SimpleNamespace(generalPasteboard=lambda: pasteboard)
+    module.NSPasteboardItem = _FakeItem
+    module.NSPasteboardTypeString = "public.utf8-plain-text"
+    return module
+
+
+class PrivateClipboardTests(unittest.TestCase):
+    def setUp(self):
+        self.pasteboard = _FakePasteboard()
+        self.pyperclip = mock.MagicMock()
+        patches = [
+            mock.patch.dict(sys.modules, {"AppKit": _fake_appkit(self.pasteboard), "pyperclip": self.pyperclip}),
+            mock.patch.object(keyboard, "_IS_MACOS", True),
+            mock.patch.object(keyboard, "_PYNPUT_AVAILABLE", False),
+            mock.patch.object(keyboard.time, "sleep"),
+        ]
+        for patcher in patches:
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def assert_concealed_write(self, text):
+        self.assertEqual(len(self.pasteboard.written), 1)
+        values = self.pasteboard.written[0].values
+        self.assertEqual(values["public.utf8-plain-text"], text)
+        self.assertIn("org.nspasteboard.ConcealedType", values)
+        self.assertIn("org.nspasteboard.TransientType", values)
+        self.pyperclip.copy.assert_not_called()
+
+    def test_ac8_given_private_mode_when_output_mode_clipboard_then_write_is_concealed_and_transient(self):
+        config = Config(output_mode="clipboard", sound_effects=False)
+        self.assertTrue(keyboard.output_text("secret", config=config, private=True))
+        self.assert_concealed_write("secret. ")
+
+    def test_ac8_given_private_mode_when_output_mode_clipboard_paste_then_write_is_concealed_and_transient(self):
+        config = Config(output_mode="clipboard_paste", sound_effects=False)
+        self.assertTrue(keyboard.output_text("secret", config=config, private=True))
+        self.assert_concealed_write("secret. ")
+
+    def test_ac15_given_private_mode_when_clipboard_paste_with_keystroke_then_insert_is_undoable(self):
+        kb = mock.Mock()
+        with mock.patch.object(keyboard, "_PYNPUT_AVAILABLE", True), \
+                mock.patch.object(keyboard, "Key", keyboard.Key or mock.Mock(name="Key")), \
+                mock.patch.object(keyboard, "get_keyboard", return_value=kb):
+            result = keyboard.output_text(
+                "secret", config=Config(output_mode="clipboard_paste", sound_effects=False), private=True
+            )
+        self.assertEqual(result, keyboard.InsertResult(text="secret. ", mode="clipboard_paste"))
+        self.assertIn(result.mode, keyboard.INSERT_MODES)
+        self.assert_concealed_write("secret. ")
+
+    def test_ac8_given_private_mode_when_concealed_write_fails_then_text_never_reaches_plain_clipboard(self):
+        self.pasteboard.write_ok = False
+        config = Config(output_mode="clipboard", sound_effects=False)
+        self.assertFalse(keyboard.output_text("secret", config=config, private=True))
+        self.pyperclip.copy.assert_not_called()
+
+    def test_ac8_given_private_mode_off_when_output_mode_clipboard_then_plain_copy_is_unchanged(self):
+        config = Config(output_mode="clipboard", sound_effects=False)
+        self.assertTrue(keyboard.output_text("hello", config=config))
+        self.pyperclip.copy.assert_called_once_with("hello. ")
+        self.assertEqual(self.pasteboard.written, [])
+
+    def test_ac8_given_private_mode_off_macos_when_clipboard_paste_then_plain_copy_is_unchanged(self):
+        config = Config(output_mode="clipboard_paste", sound_effects=False)
+        self.assertTrue(keyboard.output_text("hello", config=config))
+        self.pyperclip.copy.assert_called_once_with("hello. ")
+
+    def test_ac8_given_non_macos_when_private_then_plain_copy_is_unchanged(self):
+        with mock.patch.object(keyboard, "_IS_MACOS", False):
+            config = Config(output_mode="clipboard", sound_effects=False)
+            self.assertTrue(keyboard.output_text("hello", config=config, private=True))
+        self.pyperclip.copy.assert_called_once_with("hello. ")
 
 class InsertResultTests(unittest.TestCase):
     """output_text reports what reached the app and how (#45)."""
@@ -107,6 +217,71 @@ class InsertResultTests(unittest.TestCase):
     def test_given_zero_when_undoing_then_nothing_is_sent(self):
         self.assertFalse(keyboard.undo_last_insert(0))
         self.kb.press.assert_not_called()
+
+
+MARKER = "Geheimnis4711"
+
+
+class OutputFailureLogTests(unittest.TestCase):
+    """AC-13: failure logs on the output path never carry transcript text."""
+
+    def setUp(self):
+        self.kb = mock.Mock()
+        self.kb.type.side_effect = Exception(f"cannot type {MARKER}")
+        self.pyperclip = mock.Mock()
+        self.pyperclip.copy.side_effect = Exception(f"cannot copy {MARKER}")
+        for patcher in (
+            mock.patch.dict(sys.modules, {"pyperclip": self.pyperclip}),
+            mock.patch.object(keyboard, "_PYNPUT_AVAILABLE", True),
+            mock.patch.object(keyboard, "Key", keyboard.Key or mock.Mock(name="Key")),
+            mock.patch.object(keyboard, "get_keyboard", return_value=self.kb),
+            mock.patch.object(keyboard, "is_wayland", return_value=False),
+            mock.patch.object(keyboard, "_IS_MACOS", False),
+            mock.patch.object(keyboard, "play_sound"),
+            mock.patch.object(keyboard.time, "sleep"),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def assert_no_marker(self, logs):
+        formatter = logging.Formatter()
+        self.assertTrue(logs.records)
+        for record in logs.records:
+            self.assertNotIn(MARKER, formatter.format(record))
+
+    def output(self, mode):
+        with self.assertLogs("claude_stt.keyboard", level="DEBUG") as logs:
+            keyboard.output_text(MARKER, config=Config(output_mode=mode, sound_effects=False))
+        return logs
+
+    def test_ac13_given_injection_fails_with_text_in_exception_then_log_has_no_text(self):
+        self.assert_no_marker(self.output("injection"))
+
+    def test_ac13_given_clipboard_paste_fails_with_text_in_exception_then_log_has_no_text(self):
+        with mock.patch.object(keyboard, "_snapshot_pasteboard", return_value=None):
+            self.assert_no_marker(self.output("clipboard_paste"))
+
+    def test_ac13_given_clipboard_fails_with_text_in_exception_then_log_has_no_text(self):
+        self.assert_no_marker(self.output("clipboard"))
+
+    def test_ac13_given_wtype_fails_with_text_on_stderr_or_in_exception_then_log_has_no_text(self):
+        failed = mock.Mock(returncode=1, stderr=f"bad input {MARKER}".encode())
+        for effect in ({"return_value": failed}, {"side_effect": OSError(f"wtype {MARKER}")}):
+            with self.subTest(effect=list(effect)[0]), mock.patch.object(keyboard.subprocess, "run", **effect):
+                with self.assertLogs("claude_stt.keyboard", level="DEBUG") as logs:
+                    keyboard._output_via_wtype(MARKER, Config(sound_effects=False))
+                self.assert_no_marker(logs)
+
+    def test_ac13_given_pasteboard_snapshot_or_restore_fails_then_log_has_no_text(self):
+        broken = types.ModuleType("AppKit")
+        broken.NSPasteboard = mock.Mock()
+        broken.NSPasteboard.generalPasteboard.side_effect = Exception(f"pasteboard {MARKER}")
+        broken.NSPasteboardItem = mock.Mock()
+        with mock.patch.dict(sys.modules, {"AppKit": broken}):
+            with self.assertLogs("claude_stt.keyboard", level="DEBUG") as logs:
+                keyboard._snapshot_pasteboard()
+                keyboard._restore_pasteboard([{"public.utf8-plain-text": b"x"}])
+        self.assert_no_marker(logs)
 
 
 if __name__ == "__main__":

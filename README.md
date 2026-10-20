@@ -30,7 +30,7 @@ Free, local, private speech-to-text for your Mac. No cloud, no API costs, no dat
 | 🎛️ | **Settings UI** | Native SwiftUI settings with hotkey recorder, engine picker, vocabulary editor |
 | 🔊 | **Sound Feedback** | Audio cues for recording start/stop |
 | 📝 | **Custom Vocabulary** | Add domain-specific terms to improve recognition accuracy |
-| 🔍 | **Transcript History** | Searchable history with inline word correction and clipboard copy |
+| 🔍 | **Transcript History** | Searchable history with inline word correction, clipboard copy and per-entry delete |
 
 ---
 
@@ -69,11 +69,12 @@ The speech model is downloaded once on first use (about 1.5 GB for MLX Whisper `
 
 The menu bar app lives in your status bar and provides quick access to all controls:
 
-- **Status indicator** — mic icon when running, slashed mic when stopped
+- **Status indicator** — mic icon when running, slashed mic when stopped, crossed-out eye in private mode
 - **Start/Stop** daemon with one click
 - **Toggle Recording** (or use your hotkey)
 - **Settings** — full configuration UI
-- **Open Log** — quick access to daemon logs
+- **Private mode** — for 15 minutes, 1 hour or until turned off: dictations are typed but not stored in the history, and clipboard managers are told to skip them
+- **Open Log** — quick access to daemon logs (word counts only, never transcript text)
 
 ### Settings
 

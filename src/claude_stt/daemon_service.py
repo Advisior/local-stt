@@ -10,10 +10,12 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 from typing import Optional
 
 import numpy as np
 
+from . import history
 from .config import Config
 from .engine_factory import build_engine
 from .formatter import fix_transcription_errors, format_paragraphs
@@ -174,11 +176,22 @@ class STTDaemon(UndoHotkeyMixin):
             self._transcribing = True
             try:
                 self._process_transcription(item)
-            except Exception:
-                self._logger.exception("Unhandled error in transcription worker — thread kept alive")
+            except Exception as exc:
+                self._log_error_without_message(
+                    "Unhandled error in transcription worker, thread kept alive", exc
+                )
                 self._overlay_send("CANCEL")
             finally:
                 self._transcribing = False
+
+    def _log_error_without_message(self, message: str, exc: BaseException) -> None:
+        """Log type name and stack frames, never the exception's str or args.
+
+        Exception messages on the transcription path can carry transcript
+        text, and daemon.log must never hold any (#47 AC-13).
+        """
+        frames = "".join(traceback.format_tb(exc.__traceback__))
+        self._logger.error("%s (%s)\n%s", message, type(exc).__name__, frames)
 
     def _process_transcription(self, item) -> None:
         """Process a single transcription item from the queue."""
@@ -211,8 +224,8 @@ class STTDaemon(UndoHotkeyMixin):
         self._logger.info("Transcribing audio (%d samples, %.1f dB)...", len(audio), db)
         try:
             text = self._engine.transcribe(audio, self.config.sample_rate)
-        except Exception:
-            self._logger.exception("Transcription failed")
+        except Exception as exc:
+            self._log_error_without_message("Transcription failed", exc)
             self._overlay_send("CANCEL")
             return
 
@@ -229,22 +242,26 @@ class STTDaemon(UndoHotkeyMixin):
         text = format_paragraphs(text)
 
         word_count = len(text.split())
-        preview = text[:120].replace("\n", " ")
-        self._logger.info("Transcribed %d words: %r", word_count, preview)
+        # Never log transcript text: the log is not covered by private mode
+        # or history deletion.
+        self._logger.info("Transcribed %d words", word_count)
+        private = history.private_mode_active()
         start = self._undo.begin_insert() if self._undo else None
-        inserted = output_text(text, window_info, self.config)
+        inserted = output_text(text, window_info, self.config, private=private)
         if not inserted:
             self._logger.warning("Failed to output transcription")
         elif self._undo:
+            # In-memory only; undo keeps working in private mode.
             self._undo.record(inserted, start)
-        self._append_history(text, self._last_duration_s, db)
+        if private:
+            self._logger.info("Private mode on: transcription not added to history")
+        else:
+            self._append_history(text, self._last_duration_s, db)
         self._overlay_send(f"DONE {word_count}")
 
     def _append_history(self, text: str, duration_s: float, db: float) -> None:
         """Append transcription to history file, keeping last 100 entries."""
-        import json
         from datetime import datetime
-        history_path = Config.get_config_dir() / "history.jsonl"
         entry = {
             "timestamp": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
             "text": text,
@@ -252,15 +269,7 @@ class STTDaemon(UndoHotkeyMixin):
             "db": round(float(db), 1),
             "words": len(text.split()),
         }
-        entries = []
-        if history_path.exists():
-            try:
-                entries = [json.loads(line) for line in history_path.read_text().splitlines() if line.strip()]
-            except Exception:
-                entries = []
-        entries.append(entry)
-        entries = entries[-100:]
-        history_path.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
+        history.append_entry(entry)
 
     def _mute_system_audio(self) -> None:
         """Mute system output and store original volume for restore."""
