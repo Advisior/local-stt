@@ -1,3 +1,4 @@
+import logging
 import sys
 import types
 import unittest
@@ -216,6 +217,71 @@ class InsertResultTests(unittest.TestCase):
     def test_given_zero_when_undoing_then_nothing_is_sent(self):
         self.assertFalse(keyboard.undo_last_insert(0))
         self.kb.press.assert_not_called()
+
+
+MARKER = "Geheimnis4711"
+
+
+class OutputFailureLogTests(unittest.TestCase):
+    """AC-13: failure logs on the output path never carry transcript text."""
+
+    def setUp(self):
+        self.kb = mock.Mock()
+        self.kb.type.side_effect = Exception(f"cannot type {MARKER}")
+        self.pyperclip = mock.Mock()
+        self.pyperclip.copy.side_effect = Exception(f"cannot copy {MARKER}")
+        for patcher in (
+            mock.patch.dict(sys.modules, {"pyperclip": self.pyperclip}),
+            mock.patch.object(keyboard, "_PYNPUT_AVAILABLE", True),
+            mock.patch.object(keyboard, "Key", keyboard.Key or mock.Mock(name="Key")),
+            mock.patch.object(keyboard, "get_keyboard", return_value=self.kb),
+            mock.patch.object(keyboard, "is_wayland", return_value=False),
+            mock.patch.object(keyboard, "_IS_MACOS", False),
+            mock.patch.object(keyboard, "play_sound"),
+            mock.patch.object(keyboard.time, "sleep"),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def assert_no_marker(self, logs):
+        formatter = logging.Formatter()
+        self.assertTrue(logs.records)
+        for record in logs.records:
+            self.assertNotIn(MARKER, formatter.format(record))
+
+    def output(self, mode):
+        with self.assertLogs("claude_stt.keyboard", level="DEBUG") as logs:
+            keyboard.output_text(MARKER, config=Config(output_mode=mode, sound_effects=False))
+        return logs
+
+    def test_ac13_given_injection_fails_with_text_in_exception_then_log_has_no_text(self):
+        self.assert_no_marker(self.output("injection"))
+
+    def test_ac13_given_clipboard_paste_fails_with_text_in_exception_then_log_has_no_text(self):
+        with mock.patch.object(keyboard, "_snapshot_pasteboard", return_value=None):
+            self.assert_no_marker(self.output("clipboard_paste"))
+
+    def test_ac13_given_clipboard_fails_with_text_in_exception_then_log_has_no_text(self):
+        self.assert_no_marker(self.output("clipboard"))
+
+    def test_ac13_given_wtype_fails_with_text_on_stderr_or_in_exception_then_log_has_no_text(self):
+        failed = mock.Mock(returncode=1, stderr=f"bad input {MARKER}".encode())
+        for effect in ({"return_value": failed}, {"side_effect": OSError(f"wtype {MARKER}")}):
+            with self.subTest(effect=list(effect)[0]), mock.patch.object(keyboard.subprocess, "run", **effect):
+                with self.assertLogs("claude_stt.keyboard", level="DEBUG") as logs:
+                    keyboard._output_via_wtype(MARKER, Config(sound_effects=False))
+                self.assert_no_marker(logs)
+
+    def test_ac13_given_pasteboard_snapshot_or_restore_fails_then_log_has_no_text(self):
+        broken = types.ModuleType("AppKit")
+        broken.NSPasteboard = mock.Mock()
+        broken.NSPasteboard.generalPasteboard.side_effect = Exception(f"pasteboard {MARKER}")
+        broken.NSPasteboardItem = mock.Mock()
+        with mock.patch.dict(sys.modules, {"AppKit": broken}):
+            with self.assertLogs("claude_stt.keyboard", level="DEBUG") as logs:
+                keyboard._snapshot_pasteboard()
+                keyboard._restore_pasteboard([{"public.utf8-plain-text": b"x"}])
+        self.assert_no_marker(logs)
 
 
 if __name__ == "__main__":

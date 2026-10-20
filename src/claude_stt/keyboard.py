@@ -97,13 +97,14 @@ def _output_via_wtype(text: str, config: Config) -> Optional[str]:
             if config.sound_effects:
                 play_sound("complete")
             return "injection"
-        _logger.warning("wtype failed: %s", result.stderr.decode(errors="replace"))
+        # stderr may echo the typed text: log the exit code only.
+        _logger.warning("wtype failed with exit code %d", result.returncode)
         return None
     except subprocess.TimeoutExpired:
         _logger.warning("wtype timed out")
         return None
-    except Exception:
-        _logger.warning("wtype failed", exc_info=True)
+    except Exception as exc:
+        _logger.warning("wtype failed (%s)", type(exc).__name__)
         return None
 
 
@@ -248,9 +249,9 @@ def _output_via_injection(
             play_sound("complete")
 
         return "injection"
-    except Exception:
+    except Exception as exc:
         # Fall back to clipboard on any error
-        _logger.warning("Injection failed; falling back to clipboard", exc_info=True)
+        _logger.warning("Injection failed (%s); falling back to clipboard", type(exc).__name__)
         return _output_via_clipboard(text, config, private)
 
 
@@ -275,8 +276,8 @@ def _snapshot_pasteboard() -> Optional[list]:
             if entry:
                 items.append(entry)
         return items
-    except Exception:
-        _logger.debug("Pasteboard snapshot failed", exc_info=True)
+    except Exception as exc:
+        _logger.debug("Pasteboard snapshot failed (%s)", type(exc).__name__)
         return None
 
 
@@ -294,8 +295,8 @@ def _restore_pasteboard(items: list) -> bool:
             new_items.append(pi)
         pb.clearContents()
         return bool(pb.writeObjects_(new_items))
-    except Exception:
-        _logger.debug("Pasteboard restore failed", exc_info=True)
+    except Exception as exc:
+        _logger.debug("Pasteboard restore failed (%s)", type(exc).__name__)
         return False
 
 
@@ -360,8 +361,8 @@ def _output_via_clipboard_paste(text: str, config: Config, private: bool = False
         if config.sound_effects:
             play_sound("complete")
         return "clipboard_paste" if pasted else "clipboard"
-    except Exception:
-        _logger.warning("clipboard_paste failed; falling back to injection", exc_info=True)
+    except Exception as exc:
+        _logger.warning("clipboard_paste failed (%s); falling back to injection", type(exc).__name__)
         return _output_via_injection(text, None, config, private)
 
 
@@ -397,10 +398,10 @@ def _output_via_clipboard(text: str, config: Config, private: bool = False) -> O
             play_sound("complete")
 
         return "clipboard"
-    except Exception:
+    except Exception as exc:
         if config.sound_effects:
             play_sound("error")
-        _logger.warning("Clipboard output failed", exc_info=True)
+        _logger.warning("Clipboard output failed (%s)", type(exc).__name__)
         return None
 
 
