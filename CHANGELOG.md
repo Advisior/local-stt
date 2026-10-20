@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-10-20
+
+### Fixed
+- MLX short model names `tiny`, `base`, `small`, `medium`, `large` and `large-v3` now point to the existing `mlx-community/whisper-*-mlx` repos. Selecting `large-v3` failed with `RepositoryNotFoundError` and the daemon could not record (#52)
+
 ## [0.8.0] - 2026-10-19
 
 ### Added
