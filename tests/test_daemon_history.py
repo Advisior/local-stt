@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import tempfile
 import unittest
@@ -101,6 +102,39 @@ class ProcessTranscriptionTests(unittest.TestCase):
                 self.assertIn("Transcribed 3 words", joined)
                 for word in SECRET.split():
                     self.assertNotIn(word, joined)
+
+    def assert_marker_absent_type_present(self, logs, type_name):
+        formatter = logging.Formatter()
+        formatted = "\n".join(formatter.format(record) for record in logs.records)
+        self.assertNotIn("Marker0815", formatted)
+        self.assertIn(type_name, formatted)
+
+    def test_ac13_given_worker_error_with_text_in_message_then_log_has_type_and_frames_but_no_text(self):
+        class DictationError(Exception):
+            pass
+
+        # Built at runtime: traceback frames show source lines, and the
+        # source must not contain the marker literally.
+        message = "could not handle " + "Marker" + "0815"
+
+        def boom(item):
+            raise DictationError(message)
+
+        self.daemon._process_transcription = boom
+        self.daemon._transcribe_queue.put((None, None))
+        self.daemon._transcribe_queue.put(None)
+        with self.assertLogs("claude_stt", level="DEBUG") as logs:
+            self.daemon._transcribe_worker()
+        self.assert_marker_absent_type_present(logs, "DictationError")
+        self.assertIn("boom", "\n".join(logging.Formatter().format(r) for r in logs.records))
+
+    def test_ac13_given_engine_error_with_text_in_message_then_log_has_type_but_no_text(self):
+        self.daemon._engine = mock.Mock()
+        self.daemon._engine.transcribe.side_effect = RuntimeError("partial result Marker0815")
+        audio = np.full(16000 * 2, 0.1, dtype=np.float32)
+        with self.assertLogs("claude_stt", level="DEBUG") as logs:
+            self.daemon._process_transcription((audio, None))
+        self.assert_marker_absent_type_present(logs, "RuntimeError")
 
 
 class UndoLogTests(unittest.TestCase):

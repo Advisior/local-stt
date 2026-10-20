@@ -10,6 +10,7 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 from typing import Optional
 
 import numpy as np
@@ -175,11 +176,22 @@ class STTDaemon(UndoHotkeyMixin):
             self._transcribing = True
             try:
                 self._process_transcription(item)
-            except Exception:
-                self._logger.exception("Unhandled error in transcription worker — thread kept alive")
+            except Exception as exc:
+                self._log_error_without_message(
+                    "Unhandled error in transcription worker, thread kept alive", exc
+                )
                 self._overlay_send("CANCEL")
             finally:
                 self._transcribing = False
+
+    def _log_error_without_message(self, message: str, exc: BaseException) -> None:
+        """Log type name and stack frames, never the exception's str or args.
+
+        Exception messages on the transcription path can carry transcript
+        text, and daemon.log must never hold any (#47 AC-13).
+        """
+        frames = "".join(traceback.format_tb(exc.__traceback__))
+        self._logger.error("%s (%s)\n%s", message, type(exc).__name__, frames)
 
     def _process_transcription(self, item) -> None:
         """Process a single transcription item from the queue."""
@@ -212,8 +224,8 @@ class STTDaemon(UndoHotkeyMixin):
         self._logger.info("Transcribing audio (%d samples, %.1f dB)...", len(audio), db)
         try:
             text = self._engine.transcribe(audio, self.config.sample_rate)
-        except Exception:
-            self._logger.exception("Transcription failed")
+        except Exception as exc:
+            self._log_error_without_message("Transcription failed", exc)
             self._overlay_send("CANCEL")
             return
 
