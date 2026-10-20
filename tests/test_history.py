@@ -92,6 +92,22 @@ class DeleteTests(_ConfigDirTestCase):
         self.assertEqual(self.history_path.read_text(), "not json\n")
 
 
+class InvalidBytesTests(_ConfigDirTestCase):
+    BAD = b"\xff\xfe broken\n"
+
+    def test_ac14_given_invalid_utf8_line_when_appending_then_entry_is_added_and_line_kept(self):
+        self.history_path.write_bytes(self.BAD + (json.dumps(_entry("a", "t1")) + "\n").encode())
+        history.append_entry(_entry("b", "t2"), config_dir=self.config_dir)
+        raw = self.history_path.read_bytes()
+        self.assertTrue(raw.startswith(self.BAD))
+        self.assertTrue(raw.endswith((json.dumps(_entry("b", "t2")) + "\n").encode()))
+
+    def test_ac1_given_invalid_utf8_line_when_deleting_then_match_removed_and_line_kept(self):
+        self.history_path.write_bytes(self.BAD + (json.dumps(_entry("a", "t1")) + "\n").encode())
+        self.assertTrue(history.delete_entry("t1", "a", config_dir=self.config_dir))
+        self.assertEqual(self.history_path.read_bytes(), self.BAD)
+
+
 _CHILD_APPEND = """
 import sys
 from pathlib import Path
@@ -188,6 +204,12 @@ class PrivateModeTests(_ConfigDirTestCase):
                 with self.assertLogs("claude_stt.history", level="WARNING") as logs:
                     self.assertTrue(self.active())
                 self.assertTrue(all("private_mode.json" in line for line in logs.output))
+
+    def test_ac12_given_state_with_invalid_utf8_then_private_mode_is_on_and_warning_has_no_text(self):
+        (self.config_dir / history.PRIVATE_MODE_FILE).write_bytes(b"\xff\xfe{")
+        with self.assertLogs("claude_stt.history", level="WARNING") as logs:
+            self.assertTrue(self.active())
+        self.assertTrue(all("private_mode.json" in line for line in logs.output))
 
     @unittest.skipIf(os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0), "needs POSIX permissions")
     def test_ac12_given_unreadable_state_then_private_mode_is_on(self):

@@ -70,19 +70,23 @@ def history_lock(config_dir: Optional[Path] = None) -> Iterator[Path]:
         os.close(fd)
 
 
-def _read_lines(path: Path) -> list[str]:
-    """Raw non-empty lines; unparsed so foreign lines survive a rewrite."""
+def _read_lines(path: Path) -> list[bytes]:
+    """Raw non-empty lines as bytes.
+
+    Kept undecoded so foreign or invalid UTF-8 lines survive a rewrite
+    instead of failing the whole read.
+    """
     try:
-        return [line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        return [line for line in path.read_bytes().splitlines() if line.strip()]
     except FileNotFoundError:
         return []
 
 
-def _write_lines_atomic(path: Path, lines: list[str]) -> None:
-    content = "".join(line + "\n" for line in lines)
+def _write_lines_atomic(path: Path, lines: list[bytes]) -> None:
+    content = b"".join(line + b"\n" for line in lines)
     fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=".history.", suffix=".tmp")
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as tmp:
+        with os.fdopen(fd, "wb") as tmp:
             tmp.write(content)
             tmp.flush()
             os.fsync(tmp.fileno())
@@ -100,14 +104,14 @@ def append_entry(entry: dict, config_dir: Optional[Path] = None) -> None:
     with history_lock(config_dir) as directory:
         path = directory / HISTORY_FILE
         lines = _read_lines(path)
-        lines.append(json.dumps(entry))
+        lines.append(json.dumps(entry).encode("utf-8"))
         _write_lines_atomic(path, lines[-MAX_ENTRIES:])
 
 
-def _matches(line: str, timestamp: str, text: str) -> bool:
+def _matches(line: bytes, timestamp: str, text: str) -> bool:
     try:
         data = json.loads(line)
-    except ValueError:
+    except ValueError:  # includes UnicodeDecodeError
         return False
     return isinstance(data, dict) and data.get("timestamp") == timestamp and data.get("text") == text
 
@@ -139,7 +143,7 @@ def private_mode_active(now: Optional[datetime] = None, config_dir: Optional[Pat
         raw = path.read_text(encoding="utf-8")
     except FileNotFoundError:
         return False
-    except OSError as exc:
+    except (OSError, UnicodeError) as exc:
         _logger.warning("Cannot read %s (%s); treating private mode as on", PRIVATE_MODE_FILE, type(exc).__name__)
         return True
 
