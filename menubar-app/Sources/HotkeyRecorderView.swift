@@ -98,6 +98,7 @@ struct HotkeyField: NSViewRepresentable {
     class Coordinator: NSObject, NSTextFieldDelegate {
         let parent: HotkeyField
         var localMonitor: Any?
+        var pendingModifier: String?
 
         init(parent: HotkeyField) {
             self.parent = parent
@@ -114,6 +115,7 @@ struct HotkeyField: NSViewRepresentable {
         }
 
         func startRecording() {
+            pendingModifier = nil
             parent.isRecording = true
 
             localMonitor = NSEvent.addLocalMonitorForEvents(
@@ -136,10 +138,20 @@ struct HotkeyField: NSViewRepresentable {
                 }
 
                 if event.type == .flagsChanged {
-                    // Detect modifier-only key press
+                    // A modifier alone is only a hotkey once it is released
+                    // without another key in between; otherwise it is the
+                    // start of a combination such as ctrl+f1.
                     if let modKey = self.modifierKeyName(keyCode: event.keyCode) {
-                        self.parent.hotkeyString = modKey
-                        self.stopRecording()
+                        let held = event.modifierFlags
+                            .intersection([.control, .option, .shift, .command])
+                        if !held.isEmpty {
+                            if self.pendingModifier == nil {
+                                self.pendingModifier = modKey
+                            }
+                        } else if let pending = self.pendingModifier {
+                            self.parent.hotkeyString = pending
+                            self.stopRecording()
+                        }
                         return nil
                     }
                 }
@@ -149,6 +161,7 @@ struct HotkeyField: NSViewRepresentable {
         }
 
         func stopRecording() {
+            pendingModifier = nil
             parent.isRecording = false
             if let monitor = localMonitor {
                 NSEvent.removeMonitor(monitor)

@@ -260,3 +260,15 @@ def _restore_windows_focus(window_info: WindowInfo) -> bool:
         pass
 
     return False
+
+
+def frontmost_bundle_id() -> Optional[str]:
+    """Bundle id of the frontmost macOS app, or None if unknown."""
+    try:
+        from AppKit import NSWorkspace
+
+        app = NSWorkspace.sharedWorkspace().frontmostApplication()
+        bundle_id = app.bundleIdentifier() if app is not None else None
+        return str(bundle_id) if bundle_id else None
+    except Exception:
+        return None
