@@ -1,3 +1,4 @@
+import os
 import queue
 import time
 import unittest
@@ -211,6 +212,190 @@ class HotkeyListenerTests(unittest.TestCase):
         Quartz.CGEventSetIntegerValueField(repeat, Quartz.kCGKeyboardEventAutorepeat, 1)
         listener._on_press(space)
         self.assertIsNone(listener._intercept_event(Quartz.kCGEventKeyDown, repeat))
+
+
+@unittest.skipUnless(_PYNPUT_AVAILABLE, "pynput unavailable in this environment")
+class UndoBindingTests(unittest.TestCase):
+    """Second, optional hotkey binding for 'undo last dictation' (#45)."""
+
+    def setUp(self):
+        self.events: "queue.Queue[str]" = queue.Queue()
+        self.listener = HotkeyListener(
+            hotkey="ctrl+shift+space",
+            mode="toggle",
+            on_start=lambda: self.events.put("start"),
+            on_stop=lambda: self.events.put("stop"),
+        )
+        self.listener.add_binding(
+            "undo", "ctrl+shift+backspace", lambda: self.events.put("undo")
+        )
+        self.addCleanup(self.listener.stop)
+
+    @staticmethod
+    def _vk(key) -> int:
+        return key.value.vk
+
+    def _press_undo(self):
+        for key in (keyboard.Key.ctrl, keyboard.Key.shift, keyboard.Key.backspace):
+            self.listener._on_press(key)
+
+    def test_ac1_given_undo_binding_when_its_combination_is_pressed_then_undo_fires_once(self):
+        self._press_undo()
+        self.assertEqual(self.events.get(timeout=0.5), "undo")
+        self.listener._on_press(keyboard.Key.backspace)  # auto-repeat while held
+        time.sleep(0.05)
+        self.assertTrue(self.events.empty())
+
+    def test_ac9_given_undo_binding_triggered_when_intercepting_then_its_key_is_swallowed(self):
+        self._press_undo()
+        vk = self._vk(keyboard.Key.backspace)
+        self.assertTrue(self.listener._should_suppress(vk, is_key_down=True))
+        for key in (keyboard.Key.backspace, keyboard.Key.shift, keyboard.Key.ctrl):
+            self.listener._on_release(key)
+        self.assertTrue(self.listener._should_suppress(vk, is_key_down=False))
+        self.listener._on_press(keyboard.Key.backspace)  # plain Backspace afterwards
+        self.assertFalse(self.listener._should_suppress(vk, is_key_down=True))
+
+    def test_ac15_given_undo_binding_when_record_hotkey_pressed_then_recording_toggles(self):
+        for key in (keyboard.Key.ctrl, keyboard.Key.shift, keyboard.Key.space):
+            self.listener._on_press(key)
+        self.assertEqual(self.events.get(timeout=0.5), "start")
+        self.assertTrue(self.listener.is_recording)
+        self.listener._on_release(keyboard.Key.space)
+        self._press_undo()
+        self.assertEqual(self.events.get(timeout=0.5), "undo")
+        self.assertTrue(self.listener.is_recording)  # undo leaves recording alone
+        self.listener._on_release(keyboard.Key.backspace)
+        self.listener._on_press(keyboard.Key.space)
+        self.assertEqual(self.events.get(timeout=0.5), "stop")
+
+    def test_more_specific_binding_wins_when_one_contains_the_other(self):
+        listener = HotkeyListener(
+            hotkey="f1", mode="toggle",
+            on_start=lambda: self.events.put("start"), on_stop=lambda: None,
+        )
+        self.addCleanup(listener.stop)
+        listener.add_binding("undo", "shift+f1", lambda: self.events.put("undo"))
+        listener._on_press(keyboard.Key.shift)
+        listener._on_press(keyboard.Key.f1)
+        self.assertEqual(self.events.get(timeout=0.5), "undo")
+        time.sleep(0.05)
+        self.assertTrue(self.events.empty())
+        self.assertFalse(listener.is_recording)
+
+    def test_ac11_given_undo_equal_to_record_hotkey_when_adding_then_it_is_rejected(self):
+        listener = HotkeyListener(hotkey="ctrl+shift+space", on_start=None, on_stop=None)
+        with self.assertRaises(HotkeyError):
+            listener.add_binding("undo", "<ctrl>+<shift>+space", lambda: None)
+        with self.assertRaises(HotkeyError):
+            listener.add_binding("undo", "ctrl+nosuchkey", lambda: None)
+        with self.assertRaises(HotkeyError):
+            listener.add_binding("undo", "", lambda: None)
+        self.assertEqual(len(listener._bindings), 1)
+
+    def test_named_keys_parse_like_the_settings_recorder_writes_them(self):
+        for name in ("backspace", "delete", "up", "home", "pageup", "pagedown"):
+            with self.subTest(name=name):
+                HotkeyListener(hotkey=f"ctrl+shift+{name}", on_start=None, on_stop=None)
+
+
+@unittest.skipUnless(
+    _PYNPUT_AVAILABLE and _QUARTZ_AVAILABLE, "pynput and Quartz only on macOS"
+)
+class OtherKeyHookTests(unittest.TestCase):
+    """AC-5: user keystrokes after an insert invalidate it, the daemon's own do not."""
+
+    OTHER_PID = 4242
+
+    def setUp(self):
+        self.other_keys = []
+        self.undos: "queue.Queue[str]" = queue.Queue()
+        self.listener = HotkeyListener(
+            hotkey="ctrl+shift+space", on_start=lambda: None, on_stop=lambda: None,
+            on_other_key=lambda: self.other_keys.append(1),
+        )
+        self.listener.add_binding("undo", "ctrl+shift+backspace", lambda: self.undos.put("undo"))
+        self.listener._defer_injected = True  # as on macOS after start()
+        self.addCleanup(self.listener.stop)
+
+    def _event(self, key, down=True, pid=0):
+        event = Quartz.CGEventCreateKeyboardEvent(None, getattr(key, "value", key).vk, down)
+        Quartz.CGEventSetIntegerValueField(event, Quartz.kCGEventSourceUnixProcessID, pid)
+        return event
+
+    def _user(self, key, down=True):
+        """A hardware keystroke: pynput callback first, then the intercept."""
+        (self.listener._on_press if down else self.listener._on_release)(key, False)
+        kind = Quartz.kCGEventKeyDown if down else Quartz.kCGEventKeyUp
+        if key in (keyboard.Key.ctrl, keyboard.Key.shift):
+            kind = Quartz.kCGEventFlagsChanged
+        return self.listener._intercept_event(kind, self._event(key, down))
+
+    def _injected(self, key, down=True, pid=None):
+        pid = os.getpid() if pid is None else pid
+        (self.listener._on_press if down else self.listener._on_release)(key, True)
+        kind = Quartz.kCGEventKeyDown if down else Quartz.kCGEventKeyUp
+        return self.listener._intercept_event(kind, self._event(key, down, pid))
+
+    def test_ac5_given_a_user_letter_or_arrow_when_pressed_then_other_key_fires(self):
+        for key in (keyboard.KeyCode.from_vk(7), keyboard.Key.left, keyboard.Key.enter):
+            self.assertIsNotNone(self._user(key))
+        self.assertEqual(len(self.other_keys), 3)
+
+    def test_ac5_given_a_plain_backspace_when_pressed_then_other_key_fires(self):
+        self.assertIsNotNone(self._user(keyboard.Key.backspace))
+        self.assertEqual(len(self.other_keys), 1)
+
+    def test_ac5_given_modifiers_only_when_pressed_then_nothing_is_invalidated(self):
+        self._user(keyboard.Key.shift)
+        self._user(keyboard.Key.shift, down=False)
+        self.assertEqual(self.other_keys, [])
+
+    def test_ac5_given_the_undo_hotkey_when_pressed_then_it_does_not_invalidate(self):
+        self._user(keyboard.Key.ctrl)
+        self._user(keyboard.Key.shift)
+        self.assertIsNone(self._user(keyboard.Key.backspace))
+        self.assertEqual(self.undos.get(timeout=0.5), "undo")
+        self.assertEqual(self.other_keys, [])
+
+    def test_ac5_given_own_injected_keys_when_seen_then_they_pass_and_do_not_invalidate(self):
+        for key in (keyboard.Key.cmd, keyboard.KeyCode.from_vk(9), keyboard.Key.backspace):
+            self.assertIsNotNone(self._injected(key))
+            self.assertIsNotNone(self._injected(key, down=False))
+        self.assertEqual(self.other_keys, [])
+
+    def test_ac1_given_undo_held_when_own_backspaces_are_sent_then_they_pass_without_retrigger(self):
+        self._user(keyboard.Key.ctrl)
+        self._user(keyboard.Key.shift)
+        self._user(keyboard.Key.backspace)
+        self.assertEqual(self.undos.get(timeout=0.5), "undo")
+        for _ in range(3):
+            self.assertIsNotNone(self._injected(keyboard.Key.backspace))
+            self.assertIsNotNone(self._injected(keyboard.Key.backspace, down=False))
+        time.sleep(0.05)
+        self.assertTrue(self.undos.empty())
+        # The user's own Backspace is still held, so its key-up stays swallowed.
+        self.assertIsNone(self._user(keyboard.Key.backspace, down=False))
+
+    def test_given_another_app_injects_keys_when_seen_then_they_count_as_user_input(self):
+        self.assertIsNotNone(self._injected(keyboard.KeyCode.from_vk(7), pid=self.OTHER_PID))
+        self.assertEqual(len(self.other_keys), 1)
+
+
+class PynputPinTests(unittest.TestCase):
+    """pynput passes ``injected`` to callbacks only from 1.8 on (#45)."""
+
+    def test_ac1_ac5_given_pyproject_when_reading_pynput_pin_then_minimum_is_1_8(self):
+        import re
+        import tomllib
+        from pathlib import Path
+
+        pyproject = Path(__file__).resolve().parent.parent / "pyproject.toml"
+        deps = tomllib.loads(pyproject.read_text())["project"]["dependencies"]
+        pin = next(d for d in deps if d.startswith("pynput"))
+        match = re.fullmatch(r"pynput>=(\d+)\.(\d+)(?:\.\d+)?", pin.replace(" ", ""))
+        self.assertIsNotNone(match, pin)
+        self.assertGreaterEqual((int(match[1]), int(match[2])), (1, 8), pin)
 
 
 if __name__ == "__main__":

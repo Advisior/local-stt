@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
-## [0.8.0] - 2026-10-20
+## [0.9.0] - 2026-10-20
 
 ### Added
 - Delete single entries in the Transcript History window. The app and the daemon both lock `history.lock` and replace `history.jsonl` atomically, so a delete and a new dictation at the same moment keep both effects (#47)
@@ -14,6 +14,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 - `daemon.log` no longer contains any transcript text, only the word count (#47)
+
+## [0.8.0] - 2026-10-19
+
+### Added
+- Optional undo hotkey (`undo_hotkey`, off by default, macOS only) that removes the last dictation insert with one Backspace per character. It only acts within `undo_window_seconds` (default 60), in the same frontmost app, before any other key press, once per insert, and for single-line text up to `undo_max_chars` (default 400) without emoji, zero width joiners or combining marks. Otherwise the overlay shows "Nothing to undo" or "Too long to undo". Its key events are swallowed like the record hotkey's, and the menu bar Settings get a second hotkey recorder for it (#45)
+- Hotkey strings accept the named keys the menu bar recorder writes (`backspace`, `delete`, arrow keys, `home`, `end`, `pageup`, `pagedown`) (#45)
 
 ## [0.7.0] - 2026-09-25
 

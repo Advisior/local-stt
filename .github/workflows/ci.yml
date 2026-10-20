@@ -55,3 +55,12 @@ jobs:
       - name: Build menu bar app
         run: swift build -c release
         working-directory: menubar-app
+      # Local machines with only the Command Line Tools cannot build the app
+      # (SwiftUI macro plugin missing), so CI hands out a testable bundle.
+      - name: Package app bundle
+        run: bash scripts/build-app.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Local-STT-app
+          path: dist/Local-STT-v*.zip
+          retention-days: 7

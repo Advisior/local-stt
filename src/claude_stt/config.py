@@ -1,6 +1,7 @@
 """Configuration management for claude-stt."""
 
 import logging
+import math
 import os
 import platform
 import tempfile
@@ -64,6 +65,11 @@ class Config:
 
     # Output settings
     output_mode: Literal["injection", "clipboard", "clipboard_paste", "auto"] = "auto"
+
+    # Undo last dictation (macOS, opt-in): empty hotkey = off
+    undo_hotkey: str = ""
+    undo_window_seconds: float = 60.0
+    undo_max_chars: int = 400
 
     # Feedback settings
     sound_effects: bool = True
@@ -155,6 +161,11 @@ class Config:
                 min_audio_db=stt_config.get("min_audio_db", cls.min_audio_db),
                 audio_device=stt_config.get("audio_device", cls.audio_device),
                 output_mode=stt_config.get("output_mode", cls.output_mode),
+                undo_hotkey=stt_config.get("undo_hotkey", cls.undo_hotkey),
+                undo_window_seconds=stt_config.get(
+                    "undo_window_seconds", cls.undo_window_seconds
+                ),
+                undo_max_chars=stt_config.get("undo_max_chars", cls.undo_max_chars),
                 sound_effects=stt_config.get("sound_effects", cls.sound_effects),
                 mute_on_record=stt_config.get("mute_on_record", cls.mute_on_record),
                 language=stt_config.get("language", cls.language),
@@ -197,6 +208,9 @@ class Config:
             "min_recording_seconds": self.min_recording_seconds,
             "min_audio_db": self.min_audio_db,
             "output_mode": self.output_mode,
+            "undo_hotkey": self.undo_hotkey,
+            "undo_window_seconds": self.undo_window_seconds,
+            "undo_max_chars": self.undo_max_chars,
             "sound_effects": self.sound_effects,
             "mute_on_record": self.mute_on_record,
         }
@@ -280,6 +294,8 @@ class Config:
             logger.warning("Invalid output_mode '%s'; defaulting to 'auto'", self.output_mode)
             self.output_mode = "auto"
 
+        self._validate_undo()
+
         if not isinstance(self.sound_effects, bool):
             if isinstance(self.sound_effects, str):
                 self.sound_effects = self.sound_effects.strip().lower() in (
@@ -313,6 +329,30 @@ class Config:
             self.sample_rate = 16000
 
         return self
+
+    def _validate_undo(self) -> None:
+        if not isinstance(self.undo_hotkey, str):
+            logger.warning("Invalid undo_hotkey; undo disabled")
+            self.undo_hotkey = ""
+        self.undo_hotkey = self.undo_hotkey.strip()
+
+        try:
+            self.undo_window_seconds = float(self.undo_window_seconds)
+        except (TypeError, ValueError):
+            self.undo_window_seconds = -1.0
+        # inf would keep an insert undoable forever
+        if not (math.isfinite(self.undo_window_seconds) and self.undo_window_seconds > 0):
+            logger.warning("Invalid undo_window_seconds; defaulting to %s",
+                           Config.undo_window_seconds)
+            self.undo_window_seconds = Config.undo_window_seconds
+
+        try:
+            self.undo_max_chars = int(self.undo_max_chars)
+        except (TypeError, ValueError, OverflowError):  # OverflowError: 1e999 -> inf
+            self.undo_max_chars = 0
+        if self.undo_max_chars < 1:
+            logger.warning("Invalid undo_max_chars; defaulting to %s", Config.undo_max_chars)
+            self.undo_max_chars = Config.undo_max_chars
 
 
 def get_platform() -> str:

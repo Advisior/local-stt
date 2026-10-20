@@ -5,6 +5,7 @@ Runs as a subprocess, receives commands via stdin:
   RECORDING         - show recording indicator with timer
   TRANSCRIBING      - switch to "transcribing..." state
   DONE <n>          - flash success with word count, then hide
+  HINT <text>       - flash a short amber notice, then hide
   CANCEL            - hide immediately
   QUIT              - exit process
 """
@@ -216,6 +217,21 @@ class RecordingOverlay:
         # Auto-hide after 1.5s
         _perform_on_main(self._hide, delay=1.5)
 
+    def show_hint(self, text: str):
+        self._state = "hint"
+        self._timer_active = False
+
+        self._content.layer().setBackgroundColor_(_cgcolor(0.10, 0.10, 0.18, 0.92))
+        self._dot.setColor_(AMBER)
+        self._dot.setNeedsDisplay_(True)
+        self._status.setStringValue_(text)
+        self._status.setTextColor_(AMBER)
+        self._timer.setStringValue_("")
+
+        self._show()
+        # Auto-hide after 1.5s unless a recording took over meanwhile
+        _perform_on_main(lambda: self._state == "hint" and self._hide(), delay=1.5)
+
     def cancel(self):
         self._hide()
 
@@ -272,6 +288,8 @@ def _read_stdin(overlay):
                 parts = cmd.split(maxsplit=1)
                 count = parts[1] if len(parts) > 1 else "0"
                 _perform_on_main(lambda c=count: overlay.show_done(c))
+            elif cmd.startswith("HINT "):
+                _perform_on_main(lambda t=cmd[5:]: overlay.show_hint(t))
             elif cmd == "CANCEL":
                 _perform_on_main(overlay.cancel)
     except (EOFError, OSError):

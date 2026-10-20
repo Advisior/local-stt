@@ -94,5 +94,71 @@ class LoadDefaultEngineTests(unittest.TestCase):
         self.assertEqual(config.whisper_model, "medium")
 
 
+class UndoConfigTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.config_dir = Path(tmp.name)
+        env = mock.patch.dict(os.environ, {"LOCAL_STT_CONFIG_DIR": tmp.name})
+        env.start()
+        self.addCleanup(env.stop)
+
+    def test_ac10_given_no_undo_keys_when_loading_then_undo_is_off_with_defaults(self):
+        (self.config_dir / "config.toml").write_text('[claude-stt]\nhotkey = "f1"\n')
+        config = Config.load()
+        self.assertEqual(config.undo_hotkey, "")
+        self.assertEqual(config.undo_window_seconds, 60)
+        self.assertEqual(config.undo_max_chars, 400)
+
+    def test_ac12_given_undo_settings_when_saved_and_loaded_then_they_round_trip(self):
+        Config(
+            undo_hotkey="ctrl+shift+backspace", undo_window_seconds=30, undo_max_chars=120
+        ).save()
+        config = Config.load()
+        self.assertEqual(config.undo_hotkey, "ctrl+shift+backspace")
+        self.assertEqual(config.undo_window_seconds, 30)
+        self.assertEqual(config.undo_max_chars, 120)
+
+    def test_ac14_given_no_undo_hotkey_when_saved_then_empty_key_is_written(self):
+        Config().save()
+        self.assertIn('undo_hotkey = ""', (self.config_dir / "config.toml").read_text())
+
+    def test_given_invalid_undo_values_when_validated_then_defaults_apply(self):
+        config = Config(
+            undo_hotkey=None, undo_window_seconds="soon", undo_max_chars=0
+        ).validate()
+        self.assertEqual(config.undo_hotkey, "")
+        self.assertEqual(config.undo_window_seconds, 60)
+        self.assertEqual(config.undo_max_chars, 400)
+
+    def test_ac4_given_an_infinite_undo_window_when_loading_then_default_and_warning(self):
+        for raw in ("1e999", "inf", "+inf"):
+            with self.subTest(raw=raw):
+                (self.config_dir / "config.toml").write_text(
+                    f'[claude-stt]\nhotkey = "f5"\nundo_window_seconds = {raw}\n'
+                )
+                with self.assertLogs("claude_stt.config", level="WARNING") as logs:
+                    config = Config.load()
+                self.assertEqual(config.hotkey, "f5")
+                self.assertEqual(config.undo_window_seconds, 60)
+                self.assertIn("Invalid undo_window_seconds", "\n".join(logs.output))
+
+    def test_ac6_given_an_infinite_undo_max_chars_when_loading_then_default_and_warning(self):
+        for raw in ("1e999", "inf", "nan"):
+            with self.subTest(raw=raw):
+                (self.config_dir / "config.toml").write_text(
+                    f'[claude-stt]\nhotkey = "f5"\nundo_max_chars = {raw}\n'
+                )
+                with self.assertLogs("claude_stt.config", level="WARNING") as logs:
+                    config = Config.load()
+                self.assertEqual(config.hotkey, "f5")  # rest of the file still applies
+                self.assertEqual(config.undo_max_chars, 400)
+                self.assertIn("Invalid undo_max_chars", "\n".join(logs.output))
+
+    def test_given_padded_undo_hotkey_when_validated_then_it_is_stripped(self):
+        config = Config(undo_hotkey="  ctrl+shift+backspace ").validate()
+        self.assertEqual(config.undo_hotkey, "ctrl+shift+backspace")
+
+
 if __name__ == "__main__":
     unittest.main()

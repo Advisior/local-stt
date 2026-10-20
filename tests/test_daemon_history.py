@@ -8,6 +8,7 @@ from unittest import mock
 import numpy as np
 
 from claude_stt import daemon_service, history
+from claude_stt.keyboard import InsertResult
 from claude_stt.config import Config
 
 SECRET = "Kontonummer siebzehn geheim"
@@ -30,7 +31,9 @@ class ProcessTranscriptionTests(unittest.TestCase):
         self.daemon = daemon_service.STTDaemon(Config(sound_effects=False))
         self.daemon._engine = _FakeEngine(SECRET)
         self.daemon._overlay_send = lambda command: None
-        self.output = mock.patch.object(daemon_service, "output_text", return_value=True)
+        self.output = mock.patch.object(
+            daemon_service, "output_text", return_value=InsertResult(text=SECRET + ". ", mode="injection")
+        )
         self.output_mock = self.output.start()
 
     def tearDown(self):
@@ -69,6 +72,13 @@ class ProcessTranscriptionTests(unittest.TestCase):
         self.assertEqual(self.output_mock.call_args.args[0], SECRET)
         self.assertTrue(self.output_mock.call_args.kwargs["private"])
 
+    def test_ac15_given_private_mode_on_when_dictating_then_undo_tracker_records_the_insert(self):
+        self.set_private('{"until": null}')
+        self.daemon._undo = mock.Mock()
+        self.daemon._undo.begin_insert.return_value = "start-token"
+        self.dictate()
+        self.daemon._undo.record.assert_called_once_with(self.output_mock.return_value, "start-token")
+
     def test_ac10_given_private_mode_elapsed_when_dictating_then_history_is_written_again(self):
         self.set_private('{"until": "2000-01-01T00:00:00Z"}')
         self.dictate()
@@ -91,6 +101,18 @@ class ProcessTranscriptionTests(unittest.TestCase):
                 self.assertIn("Transcribed 3 words", joined)
                 for word in SECRET.split():
                     self.assertNotIn(word, joined)
+
+
+class UndoLogTests(unittest.TestCase):
+    def test_ac13_given_undo_refused_for_unsafe_char_then_reason_names_no_character_of_the_text(self):
+        from claude_stt import undo
+
+        for text, char in (("ok \U0001F600", "1F600"), ("e\u0301", "0301"), ("a\u200db", "200D")):
+            with self.subTest(char=char):
+                reason = undo._unsafe_char(text)
+                self.assertTrue(reason)
+                self.assertNotIn(char, reason.upper())
+                self.assertNotIn(char, reason)
 
 
 if __name__ == "__main__":
