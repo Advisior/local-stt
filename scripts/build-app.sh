@@ -25,7 +25,7 @@ echo "Building ${APP_NAME} v${VERSION}..."
 # 1. Build Swift binary
 echo "Compiling Swift..."
 cd "$SWIFT_DIR"
-swift build -c release 2>&1 | tail -5
+bash "$SCRIPT_DIR/swift-build.sh" build -c release
 
 BINARY="$SWIFT_DIR/.build/release/$BINARY_NAME"
 if [[ ! -f "$BINARY" ]]; then
@@ -49,8 +49,8 @@ for bundle in "$SWIFT_DIR/.build/release/"*.bundle; do
     fi
 done
 # Also copy logo directly for fallback
-if [[ -f "$SWIFT_DIR/Sources/Resources/advisior_logo.png" ]]; then
-    cp "$SWIFT_DIR/Sources/Resources/advisior_logo.png" "$APP_DIR/Contents/Resources/"
+if [[ -f "$SWIFT_DIR/Sources/LocalSTTCore/Resources/advisior_logo.png" ]]; then
+    cp "$SWIFT_DIR/Sources/LocalSTTCore/Resources/advisior_logo.png" "$APP_DIR/Contents/Resources/"
 fi
 
 # 4. Generate app icon

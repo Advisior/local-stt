@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-20
+
+### Changed
+- The menu bar app opens a native menu instead of a popover: a status header (Ready to Dictate, Starting…, Dictation Service Stopped, Private Mode with countdown) with engine and model, Start Dictation with the global hotkey in its title, a Private Mode submenu with a checkmark on the active duration and a live countdown, History…, Settings… (⌘,), a Dictation Service section (Start or Restart and Stop, Open Log…) and Quit. Arrow keys, type-select, Esc and VoiceOver work as in any macOS menu (#55)
+- Settings is a toolbar window with the panes General, Hotkeys, Transcription, Vocabulary and About. The window title follows the pane, the last pane is restored, minimize and zoom are off. Content, Save and Cancel are unchanged (#55)
+- History has a unified toolbar with its title and a native search field (⌘F); the in-window title, Close button and search field are gone (#55)
+- Launching the app again while it runs (Finder, Spotlight, `open -a`) opens Settings. A main menu makes ⌘, ⌘W ⌘Q and the Edit shortcuts work in the app's windows (#55)
+- The menu bar app needs macOS 14. Its code is split into the library `LocalSTTCore` with Swift Testing tests, which CI runs (#55)
+- `scripts/build-app.sh` retries with the 26.5 SDK when the default Command Line Tools SDK lacks the SwiftUI macro plugin; an explicit `SDKROOT` wins (#55)
+
 ## [0.9.0] - 2026-10-20
 
 ### Added
