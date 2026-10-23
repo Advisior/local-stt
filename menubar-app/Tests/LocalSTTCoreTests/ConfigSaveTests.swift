@@ -247,4 +247,46 @@ private func lines(_ text: String) -> [String] {
         #expect(saved.hasSuffix("[other]\nlast = 1\n"))
         #expect(!saved.hasSuffix("\n\n"))
     }
+
+    @Test("AC-1: given a managed key with a multi-line value, when the app saves, then the whole old value is replaced and no continuation lines remain")
+    func replacesMultilineManagedValue() throws {
+        let dir = try tempConfigDir()
+        try writeConfig("[claude-stt]\ninitial_prompt = \"\"\"\nAdvisior, Knex\nhotkey = \"inside\"\n\"\"\"\nhotkey = \"f1\"\n\n[corrections]\n\"old\" = \"gone\"\n", in: dir)
+        let config = ConfigManager(configDirectory: dir)
+        config.initialPrompt = "new prompt"
+        config.save()
+
+        let saved = lines(try readConfig(in: dir))
+        #expect(Array(saved.prefix(3)) == ["[claude-stt]", "initial_prompt = \"new prompt\"", "hotkey = \"f1\""])
+        #expect(!saved.contains("Advisior, Knex"))
+        #expect(!saved.contains("hotkey = \"inside\""))
+        #expect(saved.filter { $0 == "[corrections]" }.count == 1)
+    }
+
+    @Test("AC-1: given an array of tables after [claude-stt], when the app saves, then its keys are not treated as managed keys")
+    func arrayOfTablesEndsSection() throws {
+        let dir = try tempConfigDir()
+        try writeConfig("[claude-stt]\nhotkey = \"f1\"\n\n[[profiles]]\nname = \"x\"\nhotkey = \"p\"\n", in: dir)
+        let config = ConfigManager(configDirectory: dir)
+        config.hotkey = "f2"
+        config.save()
+
+        let saved = lines(try readConfig(in: dir))
+        let profiles = try #require(saved.firstIndex(of: "[[profiles]]"))
+        #expect(saved[1] == "hotkey = \"f2\"")
+        #expect(Array(saved[profiles...].prefix(3)) == ["[[profiles]]", "name = \"x\"", "hotkey = \"p\""])
+        #expect(saved.firstIndex(of: "mode = \"toggle\"")! < profiles)
+    }
+
+    @Test("AC-1: given a file with CRLF line endings, when the app saves, then every line ends with CRLF")
+    func keepsCRLF() throws {
+        let dir = try tempConfigDir()
+        try writeConfig("[claude-stt]\r\nhotkey = \"f1\"\r\nkeep = 1\r\n", in: dir)
+        ConfigManager(configDirectory: dir).addCorrection(wrong: "teh", right: "the")
+
+        let saved = try readConfig(in: dir)
+        #expect(saved.hasPrefix("[claude-stt]\r\nhotkey = \"f1\"\r\nkeep = 1\r\n"))
+        #expect(saved.hasSuffix("\r\n[corrections]\r\n\"teh\" = \"the\"\r\n"))
+        #expect(saved.replacingOccurrences(of: "\r\n", with: "").contains("\n") == false)
+    }
 }

@@ -350,6 +350,7 @@ class ConfigManager: ObservableObject {
         var sawMainSection = false
         var sawCorrections = false
         var multilineDelimiter: String?
+        var dropContinuation = false  // drop the open multi-line value's lines
 
         // Called when a section ends: append managed keys still missing from
         // [claude-stt], or the new corrections, after its last content line.
@@ -370,13 +371,15 @@ class ConfigManager: ObservableObject {
             }
         }
 
-        var lines = existing.components(separatedBy: "\n")
-        if existing.hasSuffix("\n") { lines.removeLast() }
+        // Keep the file's line ending; a CRLF file stays CRLF.
+        let newline = existing.contains("\r\n") ? "\r\n" : "\n"
+        var lines = existing.components(separatedBy: newline)
+        if existing.hasSuffix(newline) { lines.removeLast() }
         for line in lines {
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
 
             if let delimiter = multilineDelimiter {
-                if section != "corrections" { output.append(line) }
+                if !dropContinuation { output.append(line) }
                 if trimmed.components(separatedBy: delimiter).count % 2 == 0 { multilineDelimiter = nil }
                 continue
             }
@@ -396,6 +399,7 @@ class ConfigManager: ObservableObject {
                 // spacing before the next section does not change.
                 if trimmed.isEmpty { output.append(line) }
                 multilineDelimiter = openedMultiline(trimmed)
+                dropContinuation = true
                 continue
             }
 
@@ -405,11 +409,15 @@ class ConfigManager: ObservableObject {
                 if let value = values[key] {
                     written.insert(key)
                     if let value { output.append("\(key) = \(value)") }
+                    // The old value may span lines; they go with it.
+                    multilineDelimiter = openedMultiline(trimmed)
+                    dropContinuation = true
                     continue
                 }
             }
             output.append(line)
             multilineDelimiter = openedMultiline(trimmed)
+            dropContinuation = false
         }
         closeSection()
 
@@ -419,18 +427,23 @@ class ConfigManager: ObservableObject {
         if !sawCorrections && !corrections.isEmpty {
             appendSection(&output, header: "[corrections]", body: corrections)
         }
-        return output.joined(separator: "\n") + "\n"
+        return output.joined(separator: newline) + newline
     }
 
     /// Table name of a header line such as `[claude-stt]  # note`, else nil.
+    /// An array-of-tables header `[[x]]` returns "[[x]]", so it ends the
+    /// current section but never matches a section the app manages.
     private static func sectionName(_ trimmed: String) -> String? {
-        guard trimmed.hasPrefix("["), !trimmed.hasPrefix("[["),
-              let close = trimmed.firstIndex(of: "]") else { return nil }
-        let rest = trimmed[trimmed.index(after: close)...].trimmingCharacters(in: .whitespaces)
+        let isArray = trimmed.hasPrefix("[[")
+        let open = isArray ? "[[" : "["
+        let closing = isArray ? "]]" : "]"
+        guard trimmed.hasPrefix(open),
+              let close = trimmed.range(of: closing) else { return nil }
+        let rest = trimmed[close.upperBound...].trimmingCharacters(in: .whitespaces)
         guard rest.isEmpty || rest.hasPrefix("#") else { return nil }
-        let name = trimmed[trimmed.index(after: trimmed.startIndex)..<close]
-            .trimmingCharacters(in: .whitespaces)
-        return unquoteKey(name)
+        let name = unquoteKey(trimmed[trimmed.index(trimmed.startIndex, offsetBy: open.count)..<close.lowerBound]
+            .trimmingCharacters(in: .whitespaces))
+        return isArray ? "[[\(name)]]" : name
     }
 
     /// The delimiter of a multi-line string that this line opens and leaves open.
