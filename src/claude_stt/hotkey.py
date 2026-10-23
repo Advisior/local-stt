@@ -21,6 +21,16 @@ from .errors import HotkeyError
 
 RECORD = "record"
 
+# macOS device-dependent modifier flag bits (NX_DEVICE*KEYMASK) by virtual
+# keycode. The generic masks cannot tell left from right while the other side
+# is held, so a flagsChanged event is classified with these.
+_MAC_MODIFIER_FLAG_BITS = {
+    59: 0x1, 62: 0x2000,  # ctrl left/right
+    56: 0x2, 60: 0x4,  # shift left/right
+    55: 0x8, 54: 0x10,  # cmd left/right
+    58: 0x20, 61: 0x40,  # alt left/right
+}
+
 
 @dataclass
 class _Binding:
@@ -69,6 +79,9 @@ class HotkeyListener:
         self._is_recording = False
         self._pressed_keys: set = set()
         self._suppressed_vks: set[int] = set()
+        # Character keys carry their keycode only on the press event (it depends
+        # on the keyboard layout): normalized key -> vk while the key is held.
+        self._held_char_vks: dict = {}
         self._bindings: list[_Binding] = []
         self._callbacks: dict[str, Optional[Callable[[], None]]] = {}
         # macOS: pynput reports injected events before the intercept sees the
@@ -102,12 +115,25 @@ class HotkeyListener:
         keys, side_specific = self._parse_hotkey(hotkey)
         if not keys:
             raise HotkeyError(f"Hotkey '{hotkey}' did not map to any keys")
+        sides = keys if side_specific else {s for k in keys for s in self._both_sides(k)}
         vks = frozenset(
             vk
-            for vk in (getattr(getattr(k, "value", k), "vk", None) for k in keys)
+            for vk in (getattr(getattr(k, "value", k), "vk", None) for k in sides)
             if vk is not None
         )
         return _Binding(label, frozenset(keys), side_specific, vks)
+
+    @staticmethod
+    def _both_sides(key) -> tuple:
+        """A generic modifier stands for its left and right key."""
+        for generic in ("ctrl", "shift", "alt", "cmd"):
+            if key == getattr(keyboard.Key, generic):
+                return (
+                    key,
+                    getattr(keyboard.Key, f"{generic}_l"),
+                    getattr(keyboard.Key, f"{generic}_r"),
+                )
+        return (key,)
 
     def add_binding(self, label: str, hotkey: str, callback: Callable[[], None]) -> None:
         """Register another hotkey that calls ``callback`` once per press.
@@ -257,6 +283,7 @@ class HotkeyListener:
         try:
             from Quartz import (
                 CGEventGetIntegerValueField,
+                kCGEventFlagsChanged,
                 kCGEventKeyDown,
                 kCGEventSourceUnixProcessID,
                 kCGKeyboardEventAutorepeat,
@@ -272,16 +299,40 @@ class HotkeyListener:
             vk = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
             is_repeat = CGEventGetIntegerValueField(event, kCGKeyboardEventAutorepeat) != 0
             is_key_down = event_type == kCGEventKeyDown
+            if event_type == kCGEventFlagsChanged:
+                is_key_down = self._modifier_is_down(event, vk)
             with self._lock:
                 suppress = self._should_suppress(vk, is_key_down, is_repeat=is_repeat)
             if suppress:
                 self._logger.debug("Intercept: suppressing vk=%d", vk)
                 return None
-            if is_key_down and self.on_other_key is not None:
+            if event_type == kCGEventKeyDown and self.on_other_key is not None:
                 self.on_other_key()
         except Exception:
             self._logger.exception("Intercept error")
         return event
+
+    def _modifier_is_down(self, event, vk: int) -> bool:
+        """Press or release of a flagsChanged event, from the key's own flag bit.
+
+        Falls back to "release" (the behavior before #41) for keycodes without a
+        known bit or when the flags cannot be read.
+        """
+        bit = _MAC_MODIFIER_FLAG_BITS.get(vk)
+        if bit is None:
+            return False
+        try:
+            from Quartz import CGEventGetFlags
+
+            return bool(CGEventGetFlags(event) & bit)
+        except Exception as exc:
+            self._logger.debug("Intercept: cannot read event flags for vk=%d: %s", vk, exc)
+            return False
+
+    def _binding_has_vk(self, binding: _Binding, vk: int) -> bool:
+        if vk in binding.vks:
+            return True
+        return any(self._held_char_vks.get(k) == vk for k in binding.keys)
 
     def _should_suppress(self, vk: int, is_key_down: bool, is_repeat: bool = False) -> bool:
         """Whether a key event belongs to a triggered hotkey. Call with the lock held.
@@ -295,10 +346,12 @@ class HotkeyListener:
             if not is_key_down:
                 self._suppressed_vks.discard(vk)  # key-up or modifier release
                 return True
-            if is_repeat or any(b.active for b in self._bindings):
+            if is_repeat:
                 return True  # still held down
-            self._suppressed_vks.discard(vk)  # fresh press: its release was missed
-        if any(b.active and vk in b.vks for b in self._bindings):
+            # Fresh press: its release was missed. Swallow it only if it is part
+            # of an active binding again (checked below).
+            self._suppressed_vks.discard(vk)
+        if any(b.active and self._binding_has_vk(b, vk) for b in self._bindings):
             self._suppressed_vks.add(vk)
             return True
         return False
@@ -379,6 +432,9 @@ class HotkeyListener:
 
         with self._lock:
             self._pressed_keys.add(normalized)
+            vk = getattr(key, "vk", None)
+            if getattr(normalized, "char", None) and vk is not None:
+                self._held_char_vks[normalized] = vk
             matched = [
                 b for b in self._bindings
                 if not b.active
@@ -418,6 +474,7 @@ class HotkeyListener:
 
         with self._lock:
             self._pressed_keys.discard(normalized)
+            self._held_char_vks.pop(normalized, None)
             for binding in self._bindings:
                 if self._view(normalized, binding) in binding.keys:
                     binding.active = False
@@ -471,6 +528,7 @@ class HotkeyListener:
             with self._lock:
                 self._pressed_keys.clear()
                 self._suppressed_vks.clear()
+                self._held_char_vks.clear()
                 self._pending_injected.clear()
                 for binding in self._bindings:
                     binding.active = False
