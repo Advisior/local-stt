@@ -186,11 +186,20 @@ class RecorderRecoveryTests(unittest.TestCase):
         self.assertTrue(rec.ensure_alive())
         self.assertEqual(len(self.sd.streams), 3)
 
-    def test_given_portaudio_reinit_raises_when_reopened_then_the_stream_still_opens(self):
+    def test_ac3_given_portaudio_terminate_raises_when_reopened_then_reopen_fails(self):
         rec = self._recorder()
         self.sd._terminate = mock.Mock(side_effect=RuntimeError("busy"))
-        self.assertTrue(rec.reopen())
-        self.assertEqual(len(self.sd.streams), 2)
+        with self.assertLogs("claude_stt.recorder", "WARNING"):
+            self.assertFalse(rec.reopen())
+        self.assertEqual(len(self.sd.streams), 1)
+
+    def test_ac3_given_portaudio_initialize_raises_when_recording_starts_then_start_fails(self):
+        rec = self._recorder()
+        self.clock.now += 1.5
+        self.sd._initialize = mock.Mock(side_effect=RuntimeError("no devices"))
+        with self.assertLogs("claude_stt.recorder", "WARNING"):
+            self.assertFalse(rec.start())
+        self.assertFalse(rec.is_recording)
 
     def test_given_no_sounddevice_when_reopened_then_it_fails_quietly(self):
         rec = self._recorder()

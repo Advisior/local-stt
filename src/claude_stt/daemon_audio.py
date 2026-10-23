@@ -25,6 +25,8 @@ class AudioRecoveryMixin:
 
     def _report_no_input(self) -> None:
         """AC-3: tell the user that the recording got no microphone input."""
+        if self.config.mute_on_record:
+            self._restore_system_audio()  # so the error sound is audible
         device = self._recorder.device_name() if self._recorder else "unknown device"
         _logger.warning("No microphone input from %s; recording ended", device)
         self._overlay_send(NO_INPUT_HINT)
@@ -39,8 +41,6 @@ class AudioRecoveryMixin:
             if not self._recording or self._recorder.ensure_alive():
                 return
             self._recording = False
-            if self.config.mute_on_record:
-                self._restore_system_audio()
             audio = self._recorder.stop()
             window_info = self._original_window
             self._report_no_input()
@@ -57,6 +57,11 @@ class AudioRecoveryMixin:
             if self._recording or not self._recorder:
                 return
             self._recorder.reopen()
+
+    def _record_default_input(self) -> None:
+        """AC-5 baseline, taken before the stream opens on that default."""
+        if self.config.audio_device is None:
+            self._default_input_id = default_input_device_id()
 
     def _check_default_input(self) -> None:
         """AC-5, AC-6: follow macOS default-input changes while idle."""

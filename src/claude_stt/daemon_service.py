@@ -425,6 +425,7 @@ class STTDaemon(UndoHotkeyMixin, AudioRecoveryMixin):
         # the first F1 press. Without this, the first recording captures
         # zero-filled frames from an uninitialised PortAudio buffer.
         if self._recorder:
+            self._record_default_input()
             self._recorder.prewarm()
 
         # Start overlay indicator

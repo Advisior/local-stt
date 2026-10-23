@@ -226,7 +226,9 @@ class AudioRecorder:
             sd._terminate()
             sd._initialize()
         except Exception:
-            self._logger.debug("PortAudio re-initialization failed", exc_info=True)
+            # Opening now would bind the stale device cache, or fail anyway.
+            self._logger.warning("PortAudio re-initialization failed", exc_info=True)
+            return False
         if not self._open_stream():
             return False
         self._sleep(0.3)

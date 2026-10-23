@@ -393,3 +393,38 @@ class AudioRecoveryTests(unittest.TestCase):
         probe = self._poll(d, [71, 85])
         probe.assert_not_called()
         d._recorder.reopen.assert_not_called()
+
+    def test_ac3_given_mute_on_record_when_start_fails_then_sound_is_restored_before_the_error_sound(self):
+        d = self._daemon(mute_on_record=True)
+        d._recorder.start.return_value = False
+        manager = mock.Mock()
+        d._mute_system_audio = manager.mute
+        d._restore_system_audio = manager.restore
+        self.sound_daemon_audio.side_effect = manager.play_sound
+        with self.assertLogs("claude_stt.daemon_audio", "WARNING"):
+            d._on_recording_start()
+        names = [name for name, _args, _kwargs in manager.mock_calls]
+        self.assertEqual(names, ["mute", "restore", "play_sound"])
+
+    def test_ac5_given_the_default_changes_after_startup_when_first_polled_then_stream_reopens(self):
+        from claude_stt import daemon_audio
+
+        d = self._daemon()
+        d._engine = mock.Mock()
+        d._hotkey = mock.Mock()
+        d._hotkey.start.return_value = False
+        order = []
+        d._recorder.prewarm.side_effect = lambda: order.append("prewarm")
+
+        def probe():
+            order.append("probe")
+            return 71
+
+        with mock.patch.object(d, "_init_components", return_value=True), \
+                mock.patch.object(d, "_start_overlay"), \
+                mock.patch.object(daemon_audio, "default_input_device_id", side_effect=probe), \
+                self.assertRaises(SystemExit):
+            d.run()
+        self.assertEqual(order, ["probe", "prewarm"])
+        self._poll(d, [85])
+        d._recorder.reopen.assert_called_once_with()
