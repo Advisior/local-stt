@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-10-23
+
+### Fixed
+- After the input device drops, errors or changes, the next dictation records from the current default input again without restarting Local-STT. A stream that sent no audio for 1 s is closed, PortAudio is re-initialized so it re-reads the device list, and a new stream opens on the configured device or the current default, at recording start and once during a running recording (audio from before the gap is kept). A recording that ended without audio also reopens the stream (#44)
+- On macOS the daemon follows changes of the system default input (for example AirPods to built-in mic) within 3 s while idle, unless `audio_device` is set (#44)
+- When the reopen fails or the new stream stays silent, the recording ends, the overlay shows "No microphone input. Check the input device.", the error sound plays and `daemon.log` names the device (#44)
+
 ## [0.9.0] - 2026-10-20
 
 ### Added
