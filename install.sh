@@ -210,8 +210,8 @@ fetch_prebuilt_app() {
         return 1
     fi
     app="$DOWNLOAD_DIR/unpacked/Local-STT.app"
-    if [[ ! -f "$app/Contents/MacOS/Local-STT" ]]; then
-        PREBUILT_REASON="$zip_name does not contain Local-STT.app/Contents/MacOS/Local-STT"
+    if [[ ! -f "$app/Contents/MacOS/Local-STT" || ! -x "$app/Contents/MacOS/Local-STT" ]]; then
+        PREBUILT_REASON="$zip_name lacks an executable Local-STT.app/Contents/MacOS/Local-STT"
         return 1
     fi
     plist="$app/Contents/Info.plist"

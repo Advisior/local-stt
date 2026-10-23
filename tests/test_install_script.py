@@ -160,13 +160,16 @@ class InstallScriptTests(unittest.TestCase):
     # -- helpers ---------------------------------------------------------
 
     def make_release_app(self, bundle_id="com.local-stt.menubar", version=_VERSION,
-                         executable=True):
+                         executable=True, exec_bit=True):
         if self.app_src.exists():
             shutil.rmtree(self.app_src)
         macos = self.app_src / "Contents" / "MacOS"
         macos.mkdir(parents=True)
         if executable:
-            (macos / "Local-STT").write_text("binary")
+            binary = macos / "Local-STT"
+            binary.write_text("binary")
+            if exec_bit:
+                binary.chmod(0o755)
         with open(self.app_src / "Contents" / "Info.plist", "wb") as fh:
             plistlib.dump(
                 {"CFBundleIdentifier": bundle_id, "CFBundleShortVersionString": version}, fh
@@ -270,6 +273,12 @@ class InstallScriptTests(unittest.TestCase):
 
     def test_ac2_given_bundle_without_executable_when_unpacked_then_falls_back(self):
         self.make_release_app(executable=False)
+        result = self.run_remote()
+        self.assert_built_from_source(result)
+        self.assertIn("Contents/MacOS/Local-STT", self.reason_lines(result)[0])
+
+    def test_ac2_given_bundle_with_non_executable_binary_when_unpacked_then_falls_back(self):
+        self.make_release_app(exec_bit=False)
         result = self.run_remote()
         self.assert_built_from_source(result)
         self.assertIn("Contents/MacOS/Local-STT", self.reason_lines(result)[0])
