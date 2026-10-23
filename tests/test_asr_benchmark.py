@@ -54,7 +54,14 @@ class _FakeEngine:
         return text
 
 
+class _BrokenEngine(_FakeEngine):
+    def load_model(self):
+        return False
+
+
 def fake_build_engine(config):
+    if config.engine == "fake_broken":
+        return _BrokenEngine(config)
     if config.engine != "fake":
         raise bench.EngineError(f"Unknown engine '{config.engine}'")
     return _FakeEngine(config)
@@ -81,7 +88,8 @@ class _BenchCase(unittest.TestCase):
 
     def run_main(self, *argv):
         out, err = io.StringIO(), io.StringIO()
-        with mock.patch.object(bench, "build_engine", fake_build_engine):
+        with mock.patch.object(bench, "build_engine", fake_build_engine), \
+                mock.patch.object(bench, "ENGINES", bench.ENGINES + ("fake", "fake_broken")):
             with redirect_stdout(out), redirect_stderr(err):
                 code = bench.main([str(self.folder), *argv])
         return code, out.getvalue(), err.getvalue()
@@ -124,8 +132,14 @@ class BenchmarkRunTests(_BenchCase):
         self.assertIn("Hallo, Welt! aus der Config", out)
 
     def test_ac9_given_prompt_with_comma_then_it_stays_one_value(self):
-        variant = bench.parse_variant("engine=fake,prompt=Hallo, Welt", bench.Config())
+        variant = bench.parse_variant("engine=mlx,prompt=Hallo, Welt", bench.Config())
         self.assertEqual(variant.prompt, "Hallo, Welt")
+
+    def test_ac9_given_unknown_engine_then_parse_fails_naming_the_spec(self):
+        with self.assertRaises(bench.SpecError) as ctx:
+            bench.parse_variant("engine=nope,model=x", bench.Config())
+        self.assertIn("engine=nope,model=x", str(ctx.exception))
+        self.assertIn("nope", str(ctx.exception))
 
     def test_ac9_given_spec_then_keys_map_onto_a_copied_config(self):
         base = bench.Config(engine="mlx", whisper_model="large-v3-turbo", language="de",
@@ -147,6 +161,24 @@ class BenchmarkRunTests(_BenchCase):
         self.assertIn("ohne Referenz", block)
         self.assertIn("WER n/a", block)
         self.assertRegex(out.split("Summary", 1)[1], r"engine=fake\s+12\.5 %\s+\d+\.\d\d s\s+1")
+
+    def test_ac10_given_empty_or_blank_reference_then_it_counts_as_missing(self):
+        self.add_fixtures()
+        (self.folder / "a.ref.txt").write_text("", encoding="utf-8")
+        (self.folder / "b.ref.txt").write_text("  \n\t", encoding="utf-8")
+        code, out, _ = self.run_main("--variant", "engine=fake")
+        self.assertEqual(code, 0)
+        self.assertEqual(out.count("WER n/a"), 2)
+        self.assertRegex(out.split("Summary", 1)[1], r"engine=fake\s+n/a\s+\d+\.\d\d s\s+2")
+
+    def test_ac9_given_later_variant_fails_to_load_then_nothing_is_transcribed(self):
+        self.add_fixtures()
+        with mock.patch.object(_FakeEngine, "transcribe", autospec=True) as transcribe:
+            code, out, err = self.run_main("--variant", "engine=fake", "--variant", "engine=fake_broken")
+        self.assertEqual(code, 2)
+        self.assertIn("engine=fake_broken", err)
+        transcribe.assert_not_called()
+        self.assertEqual(out, "")
 
     def test_ac11_given_json_path_then_all_results_are_written(self):
         self.add_fixtures()

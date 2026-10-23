@@ -7,7 +7,8 @@ Usage:
 
 Every ``*.wav`` in <folder> (16-bit PCM, as the debug recording store writes
 them) is transcribed with every variant. ``<name>.ref.txt`` next to a WAV is
-its reference transcript; without one the WER is ``n/a``.
+its reference transcript; without one, or with an empty one, the WER is ``n/a``.
+All variants load their models before the first transcription.
 
 A variant spec is ``key=value`` pairs separated by commas:
     engine    moonshine | whisper | mlx | parakeet (default: config.toml)
@@ -46,6 +47,7 @@ from claude_stt.engine_factory import build_engine
 from claude_stt.errors import EngineError
 
 VARIANT_KEYS = ("engine", "model", "language", "prompt")
+ENGINES = ("moonshine", "whisper", "mlx", "parakeet")
 EXIT_INPUT = 1
 EXIT_SPEC = 2
 _PAIR_SPLIT = re.compile(r",(?=\s*[A-Za-z_]\w*\s*=)")
@@ -86,6 +88,8 @@ def parse_variant(spec: str, base: Config) -> Variant:
         values[key] = value.strip()
 
     engine = values.get("engine") or base.engine
+    if engine not in ENGINES:
+        raise SpecError(f"variant '{spec}': unknown engine '{engine}' (allowed: {', '.join(ENGINES)})")
     model = values.get("model") or getattr(base, _model_field(engine))
     language = values.get("language", base.language or "auto")
     return Variant(
@@ -191,21 +195,26 @@ def _fmt_wer(wer: Optional[float]) -> str:
 
 
 def load_inputs(wavs: list[Path]) -> list[tuple[Path, np.ndarray, int, Optional[str]]]:
-    """Samples, rate and reference text (``None`` without ``.ref.txt``) per WAV."""
+    """Samples, rate and reference text per WAV; ``None`` when ``.ref.txt`` is missing or blank."""
     inputs = []
     for path in wavs:
         samples, rate = read_wav(path)
         ref_path = path.with_name(f"{path.stem}.ref.txt")
-        reference = ref_path.read_text(encoding="utf-8").strip() if ref_path.exists() else None
+        reference = ref_path.read_text(encoding="utf-8").strip() if ref_path.exists() else ""
+        reference = reference or None  # empty or blank file = no reference
         inputs.append((path, samples, rate, reference))
     return inputs
 
 
 def run(inputs: list, variants: list[Variant], base: Config) -> list[dict]:
-    """Transcribe every input with every variant, printing as it goes."""
+    """Transcribe every input with every variant, printing as it goes.
+
+    All engines are built and loaded first, so a variant that cannot load
+    stops the run before any transcription instead of discarding results.
+    """
+    engines = [_build(variant, base) for variant in variants]
     results = []
-    for variant in variants:
-        engine = _build(variant, base)  # one model in memory at a time
+    for variant, engine in zip(variants, engines):
         for path, samples, rate, reference in inputs:
             started = time.perf_counter()
             transcript = engine.transcribe(samples, rate).strip()
@@ -222,7 +231,6 @@ def run(inputs: list, variants: list[Variant], base: Config) -> list[dict]:
                 "transcript": transcript, "reference": reference,
                 "latency_s": round(latency, 3), "wer": wer,
             })
-        del engine
     return results
 
 
