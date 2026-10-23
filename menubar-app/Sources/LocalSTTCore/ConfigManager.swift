@@ -45,8 +45,11 @@ class ConfigManager: ObservableObject {
         return newDir
     }
 
+    /// Directory this instance reads and writes; tests pass a temp dir.
+    let configDirectory: URL
+
     private var configURL: URL {
-        Self.configDir.appendingPathComponent("config.toml")
+        configDirectory.appendingPathComponent("config.toml")
     }
 
     /// Human-readable hotkey label for display in menus (e.g. "⌘R", "F1", "⌃⇧Space")
@@ -131,7 +134,8 @@ class ConfigManager: ObservableObject {
         }.joined(separator: " ")
     }
 
-    init(loadFromDisk: Bool = true) {
+    init(loadFromDisk: Bool = true, configDirectory: URL = ConfigManager.configDir) {
+        self.configDirectory = configDirectory
         if loadFromDisk { load() }
     }
 
@@ -266,46 +270,205 @@ class ConfigManager: ObservableObject {
 
     // MARK: - TOML Write
 
+    /// Managed `[claude-stt]` keys in write order with their TOML value;
+    /// nil removes the key line. `sample_rate` and `max_recording_seconds`
+    /// are not managed, so user values for them survive a save.
+    private var managedValues: [(key: String, value: String?)] {
+        [
+            ("hotkey", "\"\(escape(hotkey))\""),
+            ("mode", "\"\(mode)\""),
+            ("engine", "\"\(engine)\""),
+            ("moonshine_model", "\"\(escape(moonshineModel))\""),
+            ("whisper_model", "\"\(escape(whisperModel))\""),
+            ("parakeet_model", "\"\(escape(parakeetModel))\""),
+            ("output_mode", "\"\(escape(outputMode))\""),
+            ("sound_effects", "\(soundEffects)"),
+            ("auto_start_daemon", "\(autoStartDaemon)"),
+            ("mute_on_record", "\(muteOnRecord)"),
+            ("undo_hotkey", "\"\(escape(undoHotkey))\""),
+            ("undo_window_seconds", undoWindowSeconds),
+            ("undo_max_chars", undoMaxChars),
+            ("language", language.isEmpty ? nil : "\"\(escape(language))\""),
+            ("initial_prompt", initialPrompt.isEmpty ? nil : "\"\(escape(initialPrompt))\""),
+        ]
+    }
+
+    private var correctionLines: [String] {
+        corrections.sorted(by: { $0.key < $1.key }).map { wrong, right in
+            "\"\(escape(wrong))\" = \"\(escape(right))\""
+        }
+    }
+
+    /// Updates the managed keys and `[corrections]` in place and keeps every
+    /// other line of `config.toml` (unknown keys, comments, other sections).
     func save() {
         validate()
-        var lines = ["[claude-stt]"]
-        lines.append("hotkey = \"\(escape(hotkey))\"")
-        lines.append("mode = \"\(mode)\"")
-        lines.append("engine = \"\(engine)\"")
-        lines.append("moonshine_model = \"\(escape(moonshineModel))\"")
-        lines.append("whisper_model = \"\(escape(whisperModel))\"")
-        lines.append("parakeet_model = \"\(escape(parakeetModel))\"")
-        lines.append("sample_rate = 16000")
-        lines.append("max_recording_seconds = 300")
-        lines.append("output_mode = \"\(escape(outputMode))\"")
-        lines.append("sound_effects = \(soundEffects)")
-        lines.append("auto_start_daemon = \(autoStartDaemon)")
-        lines.append("mute_on_record = \(muteOnRecord)")
-        lines.append("undo_hotkey = \"\(escape(undoHotkey))\"")
-        lines.append("undo_window_seconds = \(undoWindowSeconds)")
-        lines.append("undo_max_chars = \(undoMaxChars)")
-
-        if !language.isEmpty {
-            lines.append("language = \"\(escape(language))\"")
-        }
-        if !initialPrompt.isEmpty {
-            lines.append("initial_prompt = \"\(escape(initialPrompt))\"")
+        let fm = FileManager.default
+        let existing: String?
+        if fm.fileExists(atPath: configURL.path) {
+            // Never replace a file we could not read; that would drop its keys.
+            guard let text = try? String(contentsOf: configURL, encoding: .utf8) else {
+                NSLog("Claude STT: config.toml unreadable, not saving")
+                return
+            }
+            existing = text
+        } else {
+            existing = nil
         }
 
-        if !corrections.isEmpty {
-            lines.append("")
-            lines.append("[corrections]")
-            for (wrong, right) in corrections.sorted(by: { $0.key < $1.key }) {
-                lines.append("\"\(escape(wrong))\" = \"\(escape(right))\"")
+        let content = Self.mergedConfig(
+            existing: existing, managed: managedValues, corrections: correctionLines
+        )
+
+        try? fm.createDirectory(at: configDirectory, withIntermediateDirectories: true)
+        try? content.write(to: configURL, atomically: true, encoding: .utf8)
+    }
+
+    /// Line-based merge, no TOML library: the app writes only flat string,
+    /// number and bool keys. Lines inside multi-line strings are left as is.
+    static func mergedConfig(
+        existing: String?,
+        managed: [(key: String, value: String?)],
+        corrections: [String]
+    ) -> String {
+        let managedLines = managed.compactMap { entry in
+            entry.value.map { "\(entry.key) = \($0)" }
+        }
+        guard let existing, !existing.isEmpty else {
+            var lines = ["[claude-stt]"] + managedLines
+            if !corrections.isEmpty {
+                lines += ["", "[corrections]"] + corrections
+            }
+            return lines.joined(separator: "\n") + "\n"
+        }
+
+        let values = Dictionary(managed.map { ($0.key, $0.value) }, uniquingKeysWith: { first, _ in first })
+        var written = Set<String>()
+        var output: [String] = []
+        var section: String?          // nil = root table, before any header
+        var sectionStart = 0          // index in `output` right after the header
+        var sawMainSection = false
+        var sawCorrections = false
+        var multilineDelimiter: String?
+        var dropContinuation = false  // drop the open multi-line value's lines
+
+        // Called when a section ends: append managed keys still missing from
+        // [claude-stt], or the new corrections, after its last content line.
+        func closeSection() {
+            var insertAt = output.count
+            while insertAt > sectionStart,
+                  output[insertAt - 1].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                insertAt -= 1
+            }
+            if section == "claude-stt" {
+                let missing = managed.compactMap { entry -> String? in
+                    guard !written.contains(entry.key), let value = entry.value else { return nil }
+                    return "\(entry.key) = \(value)"
+                }
+                output.insert(contentsOf: missing, at: insertAt)
+            } else if section == "corrections" {
+                output.insert(contentsOf: corrections, at: insertAt)
             }
         }
 
-        let content = lines.joined(separator: "\n") + "\n"
+        // Keep the file's line ending; a CRLF file stays CRLF.
+        let newline = existing.contains("\r\n") ? "\r\n" : "\n"
+        var lines = existing.components(separatedBy: newline)
+        if existing.hasSuffix(newline) { lines.removeLast() }
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        try? FileManager.default.createDirectory(
-            at: Self.configDir, withIntermediateDirectories: true
-        )
-        try? content.write(to: configURL, atomically: true, encoding: .utf8)
+            if let delimiter = multilineDelimiter {
+                if !dropContinuation { output.append(line) }
+                if trimmed.components(separatedBy: delimiter).count % 2 == 0 { multilineDelimiter = nil }
+                continue
+            }
+
+            if let header = sectionName(trimmed) {
+                closeSection()
+                section = header
+                output.append(line)
+                sectionStart = output.count
+                if header == "claude-stt" { sawMainSection = true }
+                if header == "corrections" { sawCorrections = true }
+                continue
+            }
+
+            if section == "corrections" {
+                // Entries and comments are replaced; blank lines stay so the
+                // spacing before the next section does not change.
+                if trimmed.isEmpty { output.append(line) }
+                multilineDelimiter = openedMultiline(trimmed)
+                dropContinuation = true
+                continue
+            }
+
+            if section == "claude-stt", !trimmed.hasPrefix("#"),
+               let eq = trimmed.firstIndex(of: "=") {
+                let key = unquoteKey(trimmed[..<eq].trimmingCharacters(in: .whitespaces))
+                if let value = values[key] {
+                    written.insert(key)
+                    if let value { output.append("\(key) = \(value)") }
+                    // The old value may span lines; they go with it.
+                    multilineDelimiter = openedMultiline(trimmed)
+                    dropContinuation = true
+                    continue
+                }
+            }
+            output.append(line)
+            multilineDelimiter = openedMultiline(trimmed)
+            dropContinuation = false
+        }
+        closeSection()
+
+        if !sawMainSection {
+            appendSection(&output, header: "[claude-stt]", body: managedLines)
+        }
+        if !sawCorrections && !corrections.isEmpty {
+            appendSection(&output, header: "[corrections]", body: corrections)
+        }
+        return output.joined(separator: newline) + newline
+    }
+
+    /// Table name of a header line such as `[claude-stt]  # note`, else nil.
+    /// An array-of-tables header `[[x]]` returns "[[x]]", so it ends the
+    /// current section but never matches a section the app manages.
+    private static func sectionName(_ trimmed: String) -> String? {
+        let isArray = trimmed.hasPrefix("[[")
+        let open = isArray ? "[[" : "["
+        let closing = isArray ? "]]" : "]"
+        guard trimmed.hasPrefix(open),
+              let close = trimmed.range(of: closing) else { return nil }
+        let rest = trimmed[close.upperBound...].trimmingCharacters(in: .whitespaces)
+        guard rest.isEmpty || rest.hasPrefix("#") else { return nil }
+        let name = unquoteKey(trimmed[trimmed.index(trimmed.startIndex, offsetBy: open.count)..<close.lowerBound]
+            .trimmingCharacters(in: .whitespaces))
+        return isArray ? "[[\(name)]]" : name
+    }
+
+    /// The delimiter of a multi-line string that this line opens and leaves open.
+    private static func openedMultiline(_ trimmed: String) -> String? {
+        for delimiter in ["\"\"\"", "'''"]
+        where trimmed.components(separatedBy: delimiter).count % 2 == 0 {
+            return delimiter
+        }
+        return nil
+    }
+
+    private static func unquoteKey(_ key: String) -> String {
+        if key.count >= 2, let first = key.first, first == key.last, first == "\"" || first == "'" {
+            return String(key.dropFirst().dropLast())
+        }
+        return key
+    }
+
+    private static func appendSection(_ output: inout [String], header: String, body: [String]) {
+        while let last = output.last, last.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            output.removeLast()
+        }
+        if !output.isEmpty { output.append("") }
+        output.append(header)
+        output += body
     }
 
     func addCorrection(wrong: String, right: String) {
