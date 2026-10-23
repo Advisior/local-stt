@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-10-23
+
+### Changed
+- `install.sh` installs the prebuilt `Local-STT.app` from the GitHub release that matches the checked-out version instead of compiling it, so a Mac with only the Command Line Tools (no Xcode) can install Local-STT. The remote install checks out the latest release tag instead of `main`. The bundle identifier and version are verified; on any download, unpack or verification error the script prints the reason and builds from source as before. `--from-source`, `--build-only` and runs from a local checkout still build with `scripts/build-app.sh` (#35)
+
 ## [0.9.0] - 2026-10-20
 
 ### Added
