@@ -80,6 +80,10 @@ class Config:
     initial_prompt: str | None = None
     corrections: dict = field(default_factory=dict)
 
+    # Debug store of real dictations for ASR benchmarks (#50): keep the
+    # newest N recordings, 0 = off
+    debug_keep_recordings: int = 0
+
     def reload_corrections(self) -> None:
         """Hot-reload only the [corrections] section from config.toml."""
         try:
@@ -171,6 +175,7 @@ class Config:
                 language=stt_config.get("language", cls.language),
                 initial_prompt=stt_config.get("initial_prompt", cls.initial_prompt),
                 corrections=corrections,
+                debug_keep_recordings=stt_config.get("debug_keep_recordings", 0),
             )
             config = config.validate()
             if legacy_path and tomli_w is not None:
@@ -221,6 +226,8 @@ class Config:
             section["language"] = self.language
         if self.initial_prompt:
             section["initial_prompt"] = self.initial_prompt
+        if self.debug_keep_recordings > 0:
+            section["debug_keep_recordings"] = self.debug_keep_recordings
 
         data = {"claude-stt": section}
 
@@ -295,6 +302,12 @@ class Config:
             self.output_mode = "auto"
 
         self._validate_undo()
+
+        value = self.debug_keep_recordings
+        # bool is an int subclass; `true` is not a count
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            logger.warning("Invalid debug_keep_recordings; debug recordings off")
+            self.debug_keep_recordings = 0
 
         if not isinstance(self.sound_effects, bool):
             if isinstance(self.sound_effects, str):

@@ -15,7 +15,7 @@ from typing import Optional
 
 import numpy as np
 
-from . import history
+from . import history, recordings
 from .config import Config
 from .engine_factory import build_engine
 from .formatter import fix_transcription_errors, format_paragraphs
@@ -226,12 +226,14 @@ class STTDaemon(UndoHotkeyMixin):
             text = self._engine.transcribe(audio, self.config.sample_rate)
         except Exception as exc:
             self._log_error_without_message("Transcription failed", exc)
+            recordings.keep(audio, self.config, db)
             self._overlay_send("CANCEL")
             return
 
-        text = text.strip()
+        raw_text = text = text.strip()
         if not text:
             self._logger.info("No speech detected")
+            recordings.keep(audio, self.config, db)
             if self.config.sound_effects:
                 play_sound("warning")
             self._overlay_send("CANCEL")
@@ -257,6 +259,7 @@ class STTDaemon(UndoHotkeyMixin):
             self._logger.info("Private mode on: transcription not added to history")
         else:
             self._append_history(text, self._last_duration_s, db)
+        recordings.keep(audio, self.config, db, raw_text, text)
         self._overlay_send(f"DONE {word_count}")
 
     def _append_history(self, text: str, duration_s: float, db: float) -> None:
