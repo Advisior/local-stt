@@ -320,6 +320,7 @@ class HotkeyListener:
         """
         bit = _MAC_MODIFIER_FLAG_BITS.get(vk)
         if bit is None:
+            self._logger.debug("Intercept: no device flag bit for vk=%d, reading it as release", vk)
             return False
         try:
             from Quartz import CGEventGetFlags

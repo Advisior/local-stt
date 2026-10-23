@@ -473,17 +473,19 @@ class MacSuppressionGapTests(unittest.TestCase):
         self.assertIsNone(self._key(listener, r, down=False))
         self.assertEqual(self.other_keys, [])
 
-    def test_ac1_given_qwertz_and_qwerty_when_z_completes_binding_then_its_own_keycode_is_swallowed(self):
+    def test_ac1_given_cmd_shift_z_on_qwerty_or_qwertz_when_z_completes_then_its_own_keycode_is_swallowed(self):
+        # Without Ctrl, pynput reports the layout's character with its keycode.
+        # With Ctrl held it maps letters through a US table instead (see PR #67).
         for vk in (self.Z_QWERTY, self.Z_QWERTZ):
             with self.subTest(vk=vk):
-                listener = self._listener("ctrl+shift+z")
-                self._key(listener, keyboard.Key.ctrl)
+                listener = self._listener("cmd+shift+z")
+                self._key(listener, keyboard.Key.cmd)
                 self._key(listener, keyboard.Key.shift)
                 z = self._char("z", vk)
                 self.assertIsNone(self._key(listener, z))
                 self.assertIsNone(self._key(listener, z, down=False))
                 self._key(listener, keyboard.Key.shift, down=False)
-                self._key(listener, keyboard.Key.ctrl, down=False)
+                self._key(listener, keyboard.Key.cmd, down=False)
 
     def test_ac2_given_ctrl_shift_r_when_plain_r_or_ctrl_r_pressed_then_r_passes(self):
         listener = self._listener("ctrl+shift+r")
@@ -581,6 +583,16 @@ class MacSuppressionGapTests(unittest.TestCase):
                     self.assertIsNone(self._key(listener, keyboard.Key.shift_r, down=False))
                 self.assertTrue(any("flags" in line.lower() for line in logs.output))
                 self.assertNotIn(self.SHIFT_R, listener._suppressed_vks)
+
+    def test_ac6_given_flags_changed_without_known_bit_then_it_reads_as_release_with_debug_log(self):
+        listener = self._listener("ctrl+shift+space")
+        caps_lock, fn = 57, 63
+        for vk in (caps_lock, fn):
+            with self.subTest(vk=vk), self.assertLogs("claude_stt.hotkey", level="DEBUG") as logs:
+                self.held_bits = 0xFFFF
+                self.assertIsNotNone(self._intercept(listener, self.quartz.kCGEventFlagsChanged, vk))
+            self.assertTrue(any(f"flag bit for vk={vk}" in line for line in logs.output))
+        self.assertEqual(self.other_keys, [])
 
     def test_ac7_given_ctrl_shift_space_when_plain_space_pressed_then_it_passes(self):
         listener = self._listener("ctrl+shift+space")
