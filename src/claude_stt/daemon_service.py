@@ -24,13 +24,14 @@ from .errors import EngineError, HotkeyError, RecorderError
 from .hotkey import HotkeyListener
 from .keyboard import output_text
 from .recorder import AudioRecorder, RecorderConfig
+from .daemon_audio import AudioRecoveryMixin
 from .daemon_undo import UndoHotkeyMixin
 from .sounds import play_sound
 from .undo import UndoTracker
 from .window import get_active_window, WindowInfo
 
 
-class STTDaemon(UndoHotkeyMixin):
+class STTDaemon(UndoHotkeyMixin, AudioRecoveryMixin):
     """Main daemon that coordinates all STT components."""
 
     def __init__(self, config: Optional[Config] = None):
@@ -70,9 +71,7 @@ class STTDaemon(UndoHotkeyMixin):
     def _start_overlay(self) -> None:
         """Start the overlay indicator subprocess."""
         try:
-            overlay_module = os.path.join(
-                os.path.dirname(__file__), "overlay.py"
-            )
+            overlay_module = os.path.join(os.path.dirname(__file__), "overlay.py")
             self._overlay_proc = subprocess.Popen(
                 [sys.executable, overlay_module],
                 stdin=subprocess.PIPE,
@@ -211,7 +210,6 @@ class STTDaemon(UndoHotkeyMixin):
                     duration_s, db,
                 )
                 # Re-trigger recording start on a short delay
-                import threading
                 threading.Timer(0.1, self._on_recording_start).start()
                 return
             self._logger.info(
@@ -331,10 +329,8 @@ class STTDaemon(UndoHotkeyMixin):
                 self._logger.info("Recording started")
                 self._overlay_send("RECORDING")
             else:
-                self._logger.error("Audio recorder failed to start")
                 self._recording = False
-                if self.config.sound_effects:
-                    play_sound("error")
+                self._report_no_input()
 
     def _on_recording_stop(self):
         """Called when recording should stop."""
@@ -389,6 +385,7 @@ class STTDaemon(UndoHotkeyMixin):
             self._overlay_send("CANCEL")
             if self.config.sound_effects:
                 play_sound("warning")
+            self._reopen_after_empty_recording()
 
     def _check_max_recording_time(self) -> None:
         """Check if max recording time has been reached."""
@@ -467,6 +464,8 @@ class STTDaemon(UndoHotkeyMixin):
         try:
             while self._running:
                 self._check_max_recording_time()
+                self._check_audio_stream()
+                self._check_default_input()
                 time.sleep(0.1)
         finally:
             self.stop()

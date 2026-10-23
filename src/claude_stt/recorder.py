@@ -32,6 +32,11 @@ class RecorderConfig:
     device: Optional[int | str] = None  # None = system default
 
 
+# A running stream delivers a callback every blocksize/sample_rate (64 ms);
+# a gap this long means the device dropped or the stream died (#44).
+STALL_SECONDS = 1.0
+
+
 @dataclass
 class AudioChunk:
     """A chunk of recorded audio."""
@@ -62,6 +67,10 @@ class AudioRecorder:
         self._max_chunks = self._compute_max_chunks()
         self._lock = threading.Lock()
         self._logger = logging.getLogger(__name__)
+        self._clock = time.monotonic
+        self._sleep = time.sleep
+        self._last_callback: float = 0.0
+        self._reopened_in_recording = False
 
     def _compute_max_chunks(self) -> Optional[int]:
         max_seconds = self.config.max_recording_seconds
@@ -109,6 +118,7 @@ class AudioRecorder:
             return True
 
         def callback(indata, frames, time_info, status):
+            self._last_callback = self._clock()
             if status:
                 self._logger.debug("Audio callback status: %s", status)
             try:
@@ -128,6 +138,7 @@ class AudioRecorder:
                 device=self.config.device,
                 callback=callback,
             )
+            self._last_callback = self._clock()
             self._stream.start()
             return True
         except Exception:
@@ -147,7 +158,7 @@ class AudioRecorder:
         if not self._open_stream():
             return False
         # Wait for the hardware buffer to fill; initial frames are zeros.
-        time.sleep(0.3)
+        self._sleep(0.3)
         self._stream_warm = True
         self._logger.debug("Audio stream pre-warmed")
         return True
@@ -176,6 +187,66 @@ class AudioRecorder:
         # Reopen
         return self.prewarm()
 
+    def device_name(self) -> str:
+        """Name of the configured input device, or of the current default."""
+        try:
+            if self.config.device is not None:
+                return str(sd.query_devices(self.config.device)["name"])
+            return str(sd.query_devices(kind="input")["name"])
+        except Exception:
+            if self.config.device is not None:
+                return str(self.config.device)
+            return "system default input"
+
+    def is_stalled(self) -> bool:
+        """True when the stream is gone or sent no callback for STALL_SECONDS."""
+        if self._stream is None:
+            return True
+        return self._clock() - self._last_callback > STALL_SECONDS
+
+    def reopen(self) -> bool:
+        """Close the stream, re-init PortAudio and open a fresh warm stream.
+
+        PortAudio caches the device list and the default input at init, so a
+        plain reopen binds the dead device again. Re-initializing makes it
+        pick up the current default (or the configured device). Chunks
+        recorded so far are kept.
+        """
+        if sd is None:
+            return False
+        if self._stream is not None:
+            try:
+                self._stream.stop()
+                self._stream.close()
+            except Exception:
+                self._logger.debug("Failed to close stream before reopen", exc_info=True)
+            self._stream = None
+        self._stream_warm = False
+        try:
+            sd._terminate()
+            sd._initialize()
+        except Exception:
+            self._logger.debug("PortAudio re-initialization failed", exc_info=True)
+        if not self._open_stream():
+            return False
+        self._sleep(0.3)
+        self._stream_warm = True
+        self._logger.info("Audio stream reopened on %s", self.device_name())
+        return True
+
+    def ensure_alive(self) -> bool:
+        """Watchdog for a running recording: reopen a stalled stream once.
+
+        Returns False when the stream is stalled and its one reopen per
+        recording is used up or fails, i.e. there is no microphone input.
+        """
+        if not self.is_stalled():
+            return True
+        if self._reopened_in_recording:
+            return False
+        self._reopened_in_recording = True
+        return self.reopen()
+
     def start(self) -> bool:
         """Start recording audio.
 
@@ -194,6 +265,13 @@ class AudioRecorder:
                 deque(maxlen=self._max_chunks) if self._max_chunks else deque()
             )
 
+        self._reopened_in_recording = False
+        if self._stream_warm and self.is_stalled():
+            # The warm stream went silent (device dropped or default changed).
+            self._reopened_in_recording = True
+            if not self.reopen():
+                return False
+
         if self._stream_warm:
             # Stream already open and hardware buffer is full — just start capture.
             self._recording = True
@@ -202,7 +280,7 @@ class AudioRecorder:
         # Stream not pre-warmed: open it now and wait for hardware to settle.
         if not self._open_stream():
             return False
-        time.sleep(0.3)
+        self._sleep(0.3)
         with self._lock:
             self._recorded_chunks.clear()
         self._recording = True
