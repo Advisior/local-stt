@@ -61,6 +61,18 @@ class HotkeyPauseTests(unittest.TestCase):
         self.press_ctrl_f1()
         self.assertEqual(self.events.get(timeout=0.5), "start")
 
+    def test_given_key_held_through_pause_end_when_it_repeats_then_hotkey_does_not_fire(self):
+        self.pause_file.touch()
+        self.press_ctrl_f1()
+        self.pause_file.unlink()
+        self.listener._on_press(keyboard.Key.f1)  # key repeat
+        time.sleep(0.05)
+        self.assertTrue(self.events.empty())
+        self.listener._on_release(keyboard.Key.f1)
+        self.listener._on_release(keyboard.Key.ctrl)
+        self.listener._on_press(keyboard.Key.f1)
+        self.assertEqual(self.events.get(timeout=0.5), "start")
+
 
 if __name__ == "__main__":
     unittest.main()
