@@ -117,12 +117,36 @@ extension ConfigManager {
         let open = isArray ? "[[" : "["
         let closing = isArray ? "]]" : "]"
         guard trimmed.hasPrefix(open),
-              let close = trimmed.range(of: closing) else { return nil }
+              let close = closingBracket(closing, in: trimmed, after: open.count) else { return nil }
         let rest = trimmed[close.upperBound...].trimmingCharacters(in: .whitespaces)
         guard rest.isEmpty || rest.hasPrefix("#") else { return nil }
         let name = unquoteKey(trimmed[trimmed.index(trimmed.startIndex, offsetBy: open.count)..<close.lowerBound]
             .trimmingCharacters(in: .whitespaces))
         return isArray ? "[[\(name)]]" : name
+    }
+
+    /// First `closing` after `offset` that is not inside a quoted key part,
+    /// so `["a]b"]` closes at the last bracket.
+    private static func closingBracket(_ closing: String, in line: String, after offset: Int) -> Range<String.Index>? {
+        var quote: Character?
+        var index = line.index(line.startIndex, offsetBy: offset)
+        while index < line.endIndex {
+            let c = line[index]
+            if let open = quote {
+                if c == "\\", open == "\"" {
+                    index = line.index(after: index)
+                    if index == line.endIndex { return nil }
+                } else if c == open {
+                    quote = nil
+                }
+            } else if c == "\"" || c == "'" {
+                quote = c
+            } else if line[index...].hasPrefix(closing) {
+                return index..<line.index(index, offsetBy: closing.count)
+            }
+            index = line.index(after: index)
+        }
+        return nil
     }
 
     private static func unquoteKey(_ key: String) -> String {

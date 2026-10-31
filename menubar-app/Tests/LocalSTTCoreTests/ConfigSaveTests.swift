@@ -341,4 +341,20 @@ private func lines(_ text: String) -> [String] {
         #expect(Array(saved[corrections...].prefix(3)) == ["[corrections]", "# names I mistype", "\"a\" = \"A\""])
         #expect(!saved.contains("\"x\" = \"y\""))
     }
+
+
+    @Test("AC-1: given a later table whose quoted name contains a closing bracket, when the app saves, then its keys are not treated as managed keys")
+    func quotedHeaderWithBracket() throws {
+        let dir = try tempConfigDir()
+        try writeConfig("[claude-stt]\nhotkey = \"f1\"\n\n[\"future]settings\"]\nhotkey = \"p\"\n", in: dir)
+        let config = ConfigManager(configDirectory: dir)
+        config.hotkey = "f2"
+        config.save()
+
+        let saved = lines(try readConfig(in: dir))
+        let future = try #require(saved.firstIndex(of: "[\"future]settings\"]"))
+        #expect(saved[1] == "hotkey = \"f2\"")
+        #expect(saved[future + 1] == "hotkey = \"p\"")
+        #expect(saved.firstIndex(of: "mode = \"toggle\"")! < future)
+    }
 }
