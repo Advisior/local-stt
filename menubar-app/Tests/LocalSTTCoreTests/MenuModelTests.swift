@@ -149,6 +149,13 @@ private func allItems(_ items: [MenuItemSpec]) -> [MenuItemSpec] {
         #expect(PrivateModeDuration.resolve(isActive: true, until: end.addingTimeInterval(60), record: record) == nil)
         #expect(PrivateModeDuration.resolve(isActive: true, until: end, record: nil) == nil)
     }
+
+    @Test("AC-4: given an unreadable private mode file, when resolved, then no duration is checked")
+    func malformedStateHasNoDuration() {
+        let record = PrivateModeRecord(duration: .oneHour, until: Date(timeIntervalSince1970: 1_000_000))
+        #expect(PrivateModeDuration.resolve(isActive: true, until: nil, record: record, malformed: true) == nil)
+        #expect(PrivateModeDuration.resolve(isActive: true, until: nil, record: nil, malformed: true) == nil)
+    }
 }
 
 @Suite struct ServiceSectionTests {
