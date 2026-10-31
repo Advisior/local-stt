@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-10-31
+
+### Fixed
+- A hotkey that mixes a generic and a side-specific modifier, such as `ctrl+cmd_r`, now needs every listed key. Before, `ctrl` was dropped and the hotkey fired on `cmd_r` alone. `ctrl` accepts either Control key, `cmd_r` only the right Command key (#70)
+
 ## [0.9.3] - 2026-10-23
 
 ### Fixed

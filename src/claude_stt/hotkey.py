@@ -38,7 +38,7 @@ class _Binding:
 
     label: str
     keys: frozenset
-    side_specific: bool  # left/right modifiers are distinct (e.g. "cmd_r")
+    generic: frozenset  # keys that accept either side (e.g. "ctrl"); "cmd_r" stays one side
     vks: frozenset  # virtual keycodes, used to swallow its events on macOS
     active: bool = False  # full combination currently held
 
@@ -112,16 +112,16 @@ class HotkeyListener:
         return self._bindings[0]
 
     def _make_binding(self, label: str, hotkey: str) -> _Binding:
-        keys, side_specific = self._parse_hotkey(hotkey)
+        keys, generic = self._parse_hotkey(hotkey)
         if not keys:
             raise HotkeyError(f"Hotkey '{hotkey}' did not map to any keys")
-        sides = keys if side_specific else {s for k in keys for s in self._both_sides(k)}
+        sides = {s for k in keys for s in (self._both_sides(k) if k in generic else (k,))}
         vks = frozenset(
             vk
             for vk in (getattr(getattr(k, "value", k), "vk", None) for k in sides)
             if vk is not None
         )
-        return _Binding(label, frozenset(keys), side_specific, vks)
+        return _Binding(label, frozenset(keys), frozenset(generic), vks)
 
     @staticmethod
     def _both_sides(key) -> tuple:
@@ -163,7 +163,7 @@ class HotkeyListener:
         "alt_l": "alt_l", "alt_left": "alt_l", "left_alt": "alt_l",
     }
 
-    def _parse_hotkey(self, hotkey_str: str) -> tuple[set, bool]:
+    def _parse_hotkey(self, hotkey_str: str) -> tuple[set, set]:
         """Parse hotkey string to a set of keys.
 
         Args:
@@ -171,14 +171,16 @@ class HotkeyListener:
                         or "cmd_r" for side-specific single modifier keys.
 
         Returns:
-            Set of key objects, and whether left/right modifiers are distinct.
+            Set of key objects, and the subset that accepts either side.
         """
         if not hotkey_str.strip():
             raise HotkeyError("Hotkey cannot be empty")
 
-        # Check for side-specific single-key hotkeys (e.g. "cmd_r")
+        # Side-specific modifiers (e.g. "cmd_r") match only their side; the
+        # remaining parts ("ctrl" in "ctrl+cmd_r") are parsed as usual.
         parts = [p.strip().lower() for p in hotkey_str.split("+") if p.strip()]
         side_keys = set()
+        rest = []
         for part in parts:
             if part in self._SIDE_SPECIFIC_KEYS:
                 key_name = self._SIDE_SPECIFIC_KEYS[part]
@@ -186,12 +188,14 @@ class HotkeyListener:
                     side_keys.add(getattr(keyboard.Key, key_name))
                 except AttributeError:
                     raise HotkeyError(f"Key '{part}' not supported by pynput")
+            else:
+                rest.append(part)
 
-        if side_keys:
-            return side_keys, True
+        if not rest:
+            return side_keys, set()
 
         try:
-            normalized = self._normalize_hotkey_string(hotkey_str)
+            normalized = self._normalize_hotkey_string("+".join(rest))
             keys = keyboard.HotKey.parse(normalized)
         except Exception as exc:
             raise HotkeyError(f"Invalid hotkey '{hotkey_str}': {exc}") from exc
@@ -201,7 +205,11 @@ class HotkeyListener:
             normalized_key = self._normalize_key(key)
             if normalized_key is not None:
                 normalized_keys.add(self._collapse_side(normalized_key))
-        return normalized_keys, False
+        if any(self._collapse_side(k) in normalized_keys for k in side_keys):
+            raise HotkeyError(
+                f"Hotkey '{hotkey_str}' names a modifier both generic and side-specific"
+            )
+        return normalized_keys | side_keys, normalized_keys
 
     def _normalize_hotkey_string(self, hotkey_str: str) -> str:
         parts = [part.strip() for part in hotkey_str.split("+") if part.strip()]
@@ -410,7 +418,8 @@ class HotkeyListener:
         return key
 
     def _view(self, key, binding: _Binding):
-        return key if binding.side_specific else self._collapse_side(key)
+        collapsed = self._collapse_side(key)
+        return collapsed if collapsed in binding.generic else key
 
     def _on_press(self, key, injected: bool = False):
         """Handle key press event (pynput passes ``injected`` since 1.8)."""
