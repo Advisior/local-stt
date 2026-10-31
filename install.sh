@@ -181,6 +181,16 @@ plist_value() {
     plutil -extract "$1" raw -o - "$2" 2>/dev/null || true
 }
 
+# The .sha256 file is `shasum -a 256` output: "<hex digest>  <file name>".
+verify_sha256() {
+    local expected="" actual=""
+    read -r expected _ < "$2" || true
+    actual="$(shasum -a 256 "$1" 2>/dev/null)" || return 1
+    actual="${actual%% *}"
+    expected="$(printf '%s' "$expected" | tr 'A-F' 'a-f')"
+    [[ "$expected" =~ ^[0-9a-f]{64}$ && "$expected" == "$actual" ]]
+}
+
 # Sets APP_SRC to the unpacked, verified bundle and returns 0, or sets
 # PREBUILT_REASON and returns 1. Runs in the main shell so the EXIT trap sees
 # DOWNLOAD_DIR.
@@ -203,6 +213,14 @@ fetch_prebuilt_app() {
         else
             PREBUILT_REASON="download of $url failed (network error)"
         fi
+        return 1
+    fi
+    if ! curl -fsSL -o "$DOWNLOAD_DIR/$zip_name.sha256" "$url.sha256"; then
+        PREBUILT_REASON="checksum $url.sha256 could not be downloaded"
+        return 1
+    fi
+    if ! verify_sha256 "$DOWNLOAD_DIR/$zip_name" "$DOWNLOAD_DIR/$zip_name.sha256"; then
+        PREBUILT_REASON="$zip_name does not match its published SHA-256"
         return 1
     fi
     if ! ditto -x -k "$DOWNLOAD_DIR/$zip_name" "$DOWNLOAD_DIR/unpacked" >/dev/null 2>&1; then

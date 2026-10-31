@@ -5,6 +5,7 @@ ditto, uv, swift, osascript and xattr are stubs, and cp/rm refuse any path
 under /Applications and only log it.
 """
 
+import hashlib
 import plistlib
 import shutil
 import stat
@@ -25,8 +26,9 @@ _ZIP_URL = (
 # Real tools the installer needs besides the stubbed ones. swift, python3 and
 # brew are deliberately not linked, so a test controls whether they exist.
 _REAL_TOOLS = (
-    "bash", "cat", "dirname", "grep", "head", "mkdir", "mktemp", "sed", "tail", "tr",
+    "bash", "cat", "dirname", "grep", "head", "mkdir", "mktemp", "sed", "shasum", "tail", "tr",
 )
+_ZIP_BYTES = b"zip\n"  # what the curl stub writes for the zip
 
 _STUBS = {
     "uname": """
@@ -45,10 +47,16 @@ _STUBS = {
             exit 0
         fi
         out=""
+        url=""
         while [[ $# -gt 0 ]]; do
-            if [[ "$1" == "-o" ]]; then out="$2"; shift; fi
+            if [[ "$1" == "-o" ]]; then out="$2"; shift; else url="$1"; fi
             shift
         done
+        if [[ "$url" == *.sha256 ]]; then
+            [[ "${FAKE_SHA_DOWNLOAD:-ok}" == "ok" ]] || exit 22
+            printf '%s  Local-STT.zip\n' "$FAKE_SHA256" > "$out"
+            exit 0
+        fi
         case "${FAKE_DOWNLOAD:-ok}" in
             ok) echo zip > "$out"; printf 200 ;;
             404) printf 404; exit 22 ;;
@@ -154,6 +162,7 @@ class InstallScriptTests(unittest.TestCase):
             "FAKE_VERSION": _VERSION,
             "FAKE_APP_SRC": str(self.app_src),
             "FAKE_BUILD_SCRIPT": str(self.build_script),
+            "FAKE_SHA256": hashlib.sha256(_ZIP_BYTES).hexdigest(),
             "FAKE_LATEST_LOCATION": f"https://github.com/Advisior/local-stt/releases/tag/{_TAG}",
         }
 
@@ -265,6 +274,28 @@ class InstallScriptTests(unittest.TestCase):
         result = self.run_remote(FAKE_DOWNLOAD="network")
         self.assert_built_from_source(result)
         self.assertIn("network error", self.reason_lines(result)[0])
+
+    def test_given_checksum_matches_when_downloading_then_uses_prebuilt(self):
+        result = self.run_remote(FAKE_SHA256=hashlib.sha256(_ZIP_BYTES).hexdigest().upper())
+        self.assert_ok(result)
+        self.assertEqual(self.logged("BUILD"), [])
+        self.assertTrue(any(f"{_ZIP_URL}.sha256" in line for line in self.logged("curl")))
+
+    def test_given_checksum_mismatch_when_downloading_then_falls_back(self):
+        result = self.run_remote(FAKE_SHA256="0" * 64)
+        self.assert_built_from_source(result)
+        self.assertIn("does not match its published SHA-256", self.reason_lines(result)[0])
+        self.assertEqual(self.logged("ditto"), [])
+
+    def test_given_malformed_checksum_when_downloading_then_falls_back(self):
+        result = self.run_remote(FAKE_SHA256="")
+        self.assert_built_from_source(result)
+        self.assertIn("SHA-256", self.reason_lines(result)[0])
+
+    def test_given_missing_checksum_when_downloading_then_falls_back(self):
+        result = self.run_remote(FAKE_SHA_DOWNLOAD="404")
+        self.assert_built_from_source(result)
+        self.assertIn("could not be downloaded", self.reason_lines(result)[0])
 
     def test_ac2_given_broken_zip_when_unpacking_then_falls_back(self):
         result = self.run_remote(FAKE_UNPACK="fail")

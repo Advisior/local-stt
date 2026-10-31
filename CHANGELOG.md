@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.11.6] - 2026-10-31
+
+### Security
+- Releases publish `Local-STT-vX.Y.Z.zip.sha256` next to the app zip, and `install.sh` checks the downloaded zip against it before unpacking. A missing, malformed or different checksum is reported as the reason and the app is built from source instead (#69)
+
 ## [0.11.5] - 2026-10-31
 
 ### Fixed
