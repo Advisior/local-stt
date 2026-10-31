@@ -42,9 +42,9 @@ Run this in Terminal:
 curl -fsSL https://raw.githubusercontent.com/Advisior/local-stt/main/install.sh | bash
 ```
 
-This sets up a self-contained Python environment under `~/Library/Application Support/Local-STT/`, builds the menu bar app from source, and installs it to `/Applications`. It needs the Xcode Command Line Tools (`xcode-select --install` if you don't have them) and works with or without Homebrew/`uv` already installed — the script tells you what's missing if anything is.
+This sets up a self-contained Python environment under `~/Library/Application Support/Local-STT/` from the latest release, installs the prebuilt menu bar app of that release to `/Applications`, and works with or without Homebrew/`uv` already installed; the script tells you what's missing. Pass `--from-source` (development, or when you run `install.sh` from a local checkout) to build the app yourself; that needs the Swift toolchain, and the script also builds from source when the release download fails.
 
-**macOS 27:** the SDK that ships with the Command Line Tools can no longer build the menu bar app (SwiftUI's `@State` became a macro whose compiler plugin comes only with Xcode). Install Xcode before running the script, see [#35](https://github.com/Advisior/local-stt/issues/35).
+**macOS 27, source build only:** the SDK that ships with the Command Line Tools can no longer build the menu bar app (SwiftUI's `@State` became a macro whose compiler plugin comes only with Xcode). Install Xcode before building from source, see [#35](https://github.com/Advisior/local-stt/issues/35).
 
 **Note:** On first launch, macOS will show "app from an unidentified developer" (this build is ad-hoc signed, not notarized). Right-click the app in `/Applications` > Open > Open to bypass Gatekeeper once.
 
