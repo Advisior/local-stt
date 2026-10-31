@@ -27,9 +27,12 @@ enum PrivateModeDuration: String, Equatable, CaseIterable {
 
     /// The duration the user chose, if it can be known. `private_mode.json`
     /// stores only the end time, so a timed duration is known only when the
-    /// app recorded the choice for exactly that end time.
-    static func resolve(isActive: Bool, until: Date?, record: PrivateModeRecord?) -> PrivateModeDuration? {
-        guard isActive else { return nil }
+    /// app recorded the choice for exactly that end time. A malformed file
+    /// counts as on but has no known duration.
+    static func resolve(
+        isActive: Bool, until: Date?, record: PrivateModeRecord?, malformed: Bool = false
+    ) -> PrivateModeDuration? {
+        guard isActive, !malformed else { return nil }
         guard let until else { return .untilTurnedOff }
         guard let record, record.duration != .untilTurnedOff, record.until == until else { return nil }
         return record.duration

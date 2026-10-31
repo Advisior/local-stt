@@ -77,7 +77,9 @@ final class PrivateModeManager: ObservableObject {
         }
         if isActive != state.active { isActive = state.active }
         if until != state.until { until = state.until }
-        let resolved = PrivateModeDuration.resolve(isActive: state.active, until: state.until, record: record)
+        let resolved = PrivateModeDuration.resolve(
+            isActive: state.active, until: state.until, record: record, malformed: state.malformed
+        )
         if duration != resolved { duration = resolved }
         if state.active { now = current }
     }
@@ -91,16 +93,16 @@ final class PrivateModeManager: ObservableObject {
         return PrivateModeRecord(duration: duration, until: until)
     }
 
-    private static func readState(now: Date) -> (active: Bool, until: Date?, expired: Bool) {
-        guard FileManager.default.fileExists(atPath: stateURL.path) else { return (false, nil, false) }
+    private static func readState(now: Date) -> (active: Bool, until: Date?, expired: Bool, malformed: Bool) {
+        guard FileManager.default.fileExists(atPath: stateURL.path) else { return (false, nil, false, false) }
         guard let data = try? Data(contentsOf: stateURL),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let raw = json["until"]
-        else { return (true, nil, false) }  // fail closed, like the daemon
-        if raw is NSNull { return (true, nil, false) }
+        else { return (true, nil, false, true) }  // fail closed, like the daemon
+        if raw is NSNull { return (true, nil, false, false) }
         guard let string = raw as? String, let end = formatter.date(from: string) else {
-            return (true, nil, false)
+            return (true, nil, false, true)
         }
-        return end > now ? (true, end, false) : (false, nil, true)
+        return end > now ? (true, end, false, false) : (false, nil, true, false)
     }
 }
