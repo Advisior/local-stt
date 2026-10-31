@@ -289,4 +289,56 @@ private func lines(_ text: String) -> [String] {
         #expect(saved.hasSuffix("\r\n[corrections]\r\n\"teh\" = \"the\"\r\n"))
         #expect(saved.replacingOccurrences(of: "\r\n", with: "").contains("\n") == false)
     }
+
+
+    @Test("AC-1: given a multi-line array whose last element looks like a header, when the app saves, then the array stays intact and missing keys go after it")
+    func multilineArrayIsNotAHeader() throws {
+        let dir = try tempConfigDir()
+        let original = "[claude-stt]\nhotkey = \"f1\"\nmatrix = [\n  [0, 1],\n  [1, 2]\n]\n\n[other]\nk = 2\n"
+        try writeConfig(original, in: dir)
+        let config = ConfigManager(configDirectory: dir)
+        config.hotkey = "f2"
+        config.save()
+
+        let saved = lines(try readConfig(in: dir))
+        #expect(Array(saved.prefix(6)) == [
+            "[claude-stt]", "hotkey = \"f2\"", "matrix = [", "  [0, 1],", "  [1, 2]", "]",
+        ])
+        let other = try #require(saved.firstIndex(of: "[other]"))
+        #expect(saved.firstIndex(of: "mode = \"toggle\"")! < other)
+        #expect(saved.firstIndex(of: "mode = \"toggle\"")! > 5)
+    }
+
+    @Test("AC-1: given triple quotes inside a comment or a one-line string, when the app saves, then later keys and headers are still recognized")
+    func tripleQuotesOutsideMultilineValues() throws {
+        for extra in ["# use \"\"\" for long prompts", "note = 'say \"\"\" here'"] {
+            let dir = try tempConfigDir()
+            try writeConfig("[claude-stt]\n\(extra)\nhotkey = \"f1\"\n\n[corrections]\n\"x\" = \"y\"\n", in: dir)
+            let config = ConfigManager(configDirectory: dir)
+            config.hotkey = "f2"
+            config.corrections = ["a": "A"]
+            config.save()
+
+            let saved = lines(try readConfig(in: dir))
+            #expect(Array(saved.prefix(3)) == ["[claude-stt]", extra, "hotkey = \"f2\""])
+            #expect(saved.filter { $0.hasPrefix("hotkey = ") }.count == 1)
+            #expect(saved.filter { $0 == "[corrections]" }.count == 1)
+            #expect(saved.contains("\"a\" = \"A\""))
+            #expect(!saved.contains("\"x\" = \"y\""))
+        }
+    }
+
+    @Test("AC-2: given comment lines in [corrections], when the app saves, then the comments stay and only the entries are replaced")
+    func keepsCorrectionsComments() throws {
+        let dir = try tempConfigDir()
+        try writeConfig("[claude-stt]\nhotkey = \"f1\"\n\n[corrections]\n# names I mistype\n\"x\" = \"y\"\n", in: dir)
+        let config = ConfigManager(configDirectory: dir)
+        config.corrections = ["a": "A"]
+        config.save()
+
+        let saved = lines(try readConfig(in: dir))
+        let corrections = try #require(saved.firstIndex(of: "[corrections]"))
+        #expect(Array(saved[corrections...].prefix(3)) == ["[corrections]", "# names I mistype", "\"a\" = \"A\""])
+        #expect(!saved.contains("\"x\" = \"y\""))
+    }
 }
