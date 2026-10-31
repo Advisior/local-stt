@@ -88,6 +88,8 @@ cat > "$APP_DIR/Contents/Info.plist" << PLIST
     <string>APPL</string>
     <key>LSUIElement</key>
     <true/>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>Local-STT needs microphone access for speech-to-text transcription.</string>
 </dict>
