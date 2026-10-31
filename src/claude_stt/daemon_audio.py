@@ -17,8 +17,9 @@ _logger = logging.getLogger(__name__)
 
 
 class AudioRecoveryMixin:
-    """Needs config, _recorder, _recording, _lock, _transcribe_queue,
-    _restore_system_audio and _overlay_send from STTDaemon."""
+    """Needs config, _recorder, _recording, _record_start_time,
+    _last_duration_s, _lock, _transcribe_queue, _restore_system_audio and
+    _overlay_send from STTDaemon."""
 
     _default_input_id: Optional[int] = None
     _next_default_input_check: float = 0.0
@@ -41,6 +42,7 @@ class AudioRecoveryMixin:
             if not self._recording or self._recorder.ensure_alive():
                 return
             self._recording = False
+            self._last_duration_s = time.time() - self._record_start_time
             audio = self._recorder.stop()
             window_info = self._original_window
             self._report_no_input()
@@ -84,4 +86,5 @@ class AudioRecoveryMixin:
             if self._recording:
                 self._default_input_id = previous  # retry once the recording ends
                 return
-            self._recorder.reopen()
+            if not self._recorder.reopen():
+                self._default_input_id = previous  # retry on the next poll

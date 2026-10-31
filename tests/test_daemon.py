@@ -367,6 +367,26 @@ class AudioRecoveryTests(unittest.TestCase):
         d._recorder.reopen.assert_called_once_with()
         self.assertIn("Default input changed", "\n".join(logs.output))
 
+    def test_ac5_given_the_reopen_fails_when_default_changed_then_the_next_poll_retries(self):
+        d = self._daemon()
+        d._recorder.reopen.side_effect = [False, True]
+        with self.assertLogs("claude_stt.daemon_audio", "INFO"):
+            self._poll(d, [71, 85, 85, 85])
+        self.assertEqual(d._recorder.reopen.call_count, 2)
+
+    def test_ac3_given_the_stream_stays_dead_when_partial_audio_is_queued_then_its_duration_is_recorded(self):
+        import numpy as np
+
+        d = self._daemon()
+        d._last_duration_s = 9.9  # from an earlier dictation
+        self._recording(d, elapsed=3.0)
+        d._recorder.ensure_alive.return_value = False
+        d._recorder.stop.return_value = np.ones(1600, dtype=np.float32)
+        with self.assertLogs("claude_stt.daemon_audio", "WARNING"):
+            d._check_audio_stream()
+        self.assertAlmostEqual(d._last_duration_s, 3.0, delta=0.5)
+        self.assertEqual(d._transcribe_queue.qsize(), 1)
+
     def test_ac5_given_checks_closer_than_2s_when_polled_then_coreaudio_is_asked_once(self):
         d = self._daemon()
         probe = self._poll(d, [71, 85, 85], step=0.5)

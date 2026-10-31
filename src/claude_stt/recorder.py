@@ -204,6 +204,8 @@ class AudioRecorder:
             return True
         return self._clock() - self._last_callback > STALL_SECONDS
 
+    _portaudio_down = False  # _terminate ran, _initialize did not succeed
+
     def reopen(self) -> bool:
         """Close the stream, re-init PortAudio and open a fresh warm stream.
 
@@ -223,8 +225,13 @@ class AudioRecorder:
             self._stream = None
         self._stream_warm = False
         try:
-            sd._terminate()
+            if not self._portaudio_down:
+                sd._terminate()
+            # A failed _initialize leaves PortAudio down; the next reopen
+            # must not terminate again (paNotInitialized) but retry init.
+            self._portaudio_down = True
             sd._initialize()
+            self._portaudio_down = False
         except Exception:
             # Opening now would bind the stale device cache, or fail anyway.
             self._logger.warning("PortAudio re-initialization failed", exc_info=True)
