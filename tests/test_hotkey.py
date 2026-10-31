@@ -683,6 +683,12 @@ class MixedModifierHotkeyTests(unittest.TestCase):
         self.assertIn(vk(keyboard.Key.cmd_r), vks)
         self.assertNotIn(vk(keyboard.Key.cmd_l), vks)
 
+    def test_ac4_given_generic_and_side_variant_of_one_modifier_when_parsed_then_rejected(self):
+        for hotkey in ("ctrl+ctrl_r", "ctrl+ctrl_l", "cmd_r+cmd+space"):
+            with self.subTest(hotkey=hotkey):
+                with self.assertRaises(HotkeyError):
+                    self._listener(hotkey)
+
     def test_unchanged_given_cmd_r_alone_when_left_cmd_pressed_then_it_does_not_fire(self):
         listener = self._listener("cmd_r")
         self._press(listener, keyboard.Key.cmd_l)

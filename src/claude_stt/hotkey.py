@@ -205,6 +205,10 @@ class HotkeyListener:
             normalized_key = self._normalize_key(key)
             if normalized_key is not None:
                 normalized_keys.add(self._collapse_side(normalized_key))
+        if any(self._collapse_side(k) in normalized_keys for k in side_keys):
+            raise HotkeyError(
+                f"Hotkey '{hotkey_str}' names a modifier both generic and side-specific"
+            )
         return normalized_keys | side_keys, normalized_keys
 
     def _normalize_hotkey_string(self, hotkey_str: str) -> str:
