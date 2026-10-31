@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.11.3] - 2026-10-31
+
+### Fixed
+- Recording a hotkey in the app that contains the current record key, such as `ctrl+f1` with record key `f1`, no longer starts a dictation and no longer swallows the key. While the recorder listens, the app writes `hotkeys_paused` into the config directory and the daemon ignores its hotkeys. The file is refreshed every 3 seconds and ignored once older than 10 seconds, so a crashed app cannot leave the hotkeys off (#49)
+
 ## [0.11.2] - 2026-10-31
 
 ### Changed
