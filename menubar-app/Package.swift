@@ -1,4 +1,4 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 5.9
 import PackageDescription
 
 let package = Package(
@@ -24,8 +24,8 @@ let package = Package(
             dependencies: ["LocalSTTCore"],
             path: "Tests/LocalSTTCoreTests"
         ),
-    ],
-    // Swift 6 tools for Swift Testing, Swift 5 language mode to avoid
-    // strict-concurrency churn in existing AppKit code.
-    swiftLanguageModes: [.v5]
+    ]
+    // Tools version 5.9 keeps the source installer working with the Xcode 15
+    // Command Line Tools. The tests use Swift Testing and need a Swift 6
+    // toolchain, which only development and CI require.
 )
