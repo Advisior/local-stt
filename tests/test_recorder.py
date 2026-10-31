@@ -201,6 +201,17 @@ class RecorderRecoveryTests(unittest.TestCase):
             self.assertFalse(rec.start())
         self.assertFalse(rec.is_recording)
 
+    def test_ac3_given_portaudio_initialize_failed_once_when_reopened_again_then_it_initializes_without_terminate(self):
+        rec = self._recorder()
+        self.sd._initialize = mock.Mock(side_effect=[RuntimeError("no devices"), None])
+        with self.assertLogs("claude_stt.recorder", "WARNING"):
+            self.assertFalse(rec.reopen())
+        # Terminating an uninitialized PortAudio raises paNotInitialized.
+        self.sd._terminate = mock.Mock(side_effect=RuntimeError("paNotInitialized"))
+        self.assertTrue(rec.reopen())
+        self.sd._terminate.assert_not_called()
+        self.assertEqual(self.sd._initialize.call_count, 2)
+
     def test_given_no_sounddevice_when_reopened_then_it_fails_quietly(self):
         rec = self._recorder()
         with mock.patch.object(recorder, "sd", None):
