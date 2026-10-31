@@ -136,6 +136,18 @@ class RecordingStoreTests(_DaemonCase):
         self.dictate()
         self.assertFalse(self.rec_dir.exists())
 
+    def test_ac3_given_private_mode_ends_while_inserting_then_nothing_is_stored(self):
+        private_file = self.config_dir / history.PRIVATE_MODE_FILE
+        private_file.write_text('{"until": null}')
+
+        def insert_then_end_private(*args, **kwargs):
+            private_file.unlink()
+            return InsertResult(text=SECRET + ". ", mode="injection")
+
+        self.output_mock.side_effect = insert_then_end_private
+        self.dictate()
+        self.assertFalse(self.rec_dir.exists())
+
     def test_ac5_given_write_fails_then_warning_without_text_and_dictation_continues(self):
         with mock.patch.object(recordings.wave, "open", side_effect=OSError(28, "No space left " + SECRET)):
             logs = self.dictate()

@@ -259,7 +259,7 @@ class STTDaemon(UndoHotkeyMixin):
             self._logger.info("Private mode on: transcription not added to history")
         else:
             self._append_history(text, self._last_duration_s, db)
-        recordings.keep(audio, self.config, db, raw_text, text)
+        recordings.keep(audio, self.config, db, raw_text, text, private=private)
         self._overlay_send(f"DONE {word_count}")
 
     def _append_history(self, text: str, duration_s: float, db: float) -> None:

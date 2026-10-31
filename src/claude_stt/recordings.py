@@ -41,13 +41,25 @@ def model_name(config: Config) -> str:
     return config.whisper_model
 
 
-def keep(audio: np.ndarray, config: Config, db: float, raw_text: str = "", text: str = "") -> None:
+def keep(
+    audio: np.ndarray,
+    config: Config,
+    db: float,
+    raw_text: str = "",
+    text: str = "",
+    private: bool | None = None,
+) -> None:
     """Store the recording if the debug store is on and private mode is off.
+
+    ``private`` is the decision the caller already made for this dictation;
+    without it the private mode state is read here.
 
     Never raises: a failed write logs the exception type only (no message,
     it could carry a path or text) and the dictation carries on (AC-5).
     """
-    if config.debug_keep_recordings <= 0 or history.private_mode_active():
+    if config.debug_keep_recordings <= 0:
+        return
+    if history.private_mode_active() if private is None else private:
         return
     try:
         save_recording(audio, config, db=db, raw_text=raw_text, text=text)
