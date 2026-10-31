@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-10-31
+
+### Changed
+- Internal: the macOS key event intercept moved from `hotkey.py` to `hotkey_darwin.py`, and its tests moved to `tests/test_hotkey_darwin.py`, so both `hotkey.py` and `tests/test_hotkey.py` are below the 500-line limit again. No behavior change (#71)
+
 ## [0.11.1] - 2026-10-31
 
 ### Fixed
