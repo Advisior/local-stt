@@ -54,7 +54,7 @@ struct HotkeyRecorderView: View {
             displayText = humanReadable(hotkeyString)
             conflict = checkConflict(hotkeyString)
         }
-        .onChange(of: hotkeyString) { newValue in
+        .onChange(of: hotkeyString) { _, newValue in
             displayText = humanReadable(newValue)
             conflict = checkConflict(newValue)
         }

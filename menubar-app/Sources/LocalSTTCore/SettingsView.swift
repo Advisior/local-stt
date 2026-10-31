@@ -1,7 +1,10 @@
 import ServiceManagement
 import SwiftUI
 
-struct SettingsView: View {
+/// One Settings pane plus the shared Save/Cancel bar. All panes edit the same
+/// `ConfigManager`, so switching panes keeps unsaved edits.
+struct SettingsPaneView: View {
+    let pane: SettingsPane
     @ObservedObject var config: ConfigManager
     @ObservedObject var daemon: DaemonManager
     var onDismiss: () -> Void
@@ -10,22 +13,7 @@ struct SettingsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            TabView {
-                GeneralTab(config: config)
-                    .tabItem {
-                        Label("General", systemImage: "gearshape")
-                    }
-
-                TranscriptionTab(config: config)
-                    .tabItem {
-                        Label("Transcription", systemImage: "text.bubble")
-                    }
-
-                AboutTab(daemon: daemon)
-                    .tabItem {
-                        Label("About", systemImage: "info.circle")
-                    }
-            }
+            content
 
             Divider()
 
@@ -52,7 +40,6 @@ struct SettingsView: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
         }
-        .frame(width: 520, height: 540)
         .alert("Restart Daemon?", isPresented: $showRestartAlert) {
             Button("Restart Now") {
                 daemon.restartDaemon()
@@ -63,6 +50,16 @@ struct SettingsView: View {
             }
         } message: {
             Text("Settings saved. Restart the daemon to apply changes?")
+        }
+    }
+
+    @ViewBuilder private var content: some View {
+        switch pane {
+        case .general: GeneralTab(config: config)
+        case .hotkeys: HotkeysTab(config: config)
+        case .transcription: TranscriptionTab(config: config)
+        case .vocabulary: VocabularyTab(config: config)
+        case .about: AboutTab(daemon: daemon)
         }
     }
 }
@@ -79,7 +76,7 @@ private struct GeneralTab: View {
                 Toggle("Start daemon when app opens", isOn: $config.autoStartDaemon)
 
                 Toggle("Launch at Login", isOn: $launchAtLogin)
-                    .onChange(of: launchAtLogin) { newValue in
+                    .onChange(of: launchAtLogin) { _, newValue in
                         setLaunchAtLogin(newValue)
                     }
             } header: {
@@ -87,41 +84,10 @@ private struct GeneralTab: View {
             }
 
             Section {
-                VStack(alignment: .leading, spacing: 4) {
-                    LabeledContent("Hotkey") {
-                        HotkeyRecorderView(hotkeyString: $config.hotkey)
-                    }
-                    settingHint("Click the field and press your desired key or combination")
-                }
-
-                VStack(alignment: .leading, spacing: 4) {
-                    LabeledContent("Undo last dictation") {
-                        HotkeyRecorderView(hotkeyString: $config.undoHotkey)
-                    }
-                    settingHint("Optional. Removes the last dictation with Backspaces, until you type or switch apps")
-                }
-
-                VStack(alignment: .leading, spacing: 4) {
-                    LabeledContent("Mode") {
-                        Picker("", selection: $config.mode) {
-                            Text("Push-to-Talk").tag("push-to-talk")
-                            Text("Toggle").tag("toggle")
-                        }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
-                        .frame(width: 200)
-                    }
-                    settingHint("Push-to-Talk: hold key to record. Toggle: press to start/stop")
-                }
-            } header: {
-                Label("Input", systemImage: "keyboard")
-            }
-
-            Section {
                 Toggle("Sound Effects", isOn: $config.soundEffects)
 
                 Toggle("Mute system audio while recording", isOn: $config.muteOnRecord)
-                    .onChange(of: config.muteOnRecord) { _ in config.save() }
+                    .onChange(of: config.muteOnRecord) { config.save() }
 
                 VStack(alignment: .leading, spacing: 4) {
                     LabeledContent("Engine") {
@@ -221,16 +187,52 @@ private struct GeneralTab: View {
     }
 }
 
+// MARK: - Hotkeys Tab
+
+private struct HotkeysTab: View {
+    @ObservedObject var config: ConfigManager
+
+    var body: some View {
+        Form {
+            Section {
+                VStack(alignment: .leading, spacing: 4) {
+                    LabeledContent("Hotkey") {
+                        HotkeyRecorderView(hotkeyString: $config.hotkey)
+                    }
+                    settingHint("Click the field and press your desired key or combination")
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    LabeledContent("Undo last dictation") {
+                        HotkeyRecorderView(hotkeyString: $config.undoHotkey)
+                    }
+                    settingHint("Optional. Removes the last dictation with Backspaces, until you type or switch apps")
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    LabeledContent("Mode") {
+                        Picker("", selection: $config.mode) {
+                            Text("Push-to-Talk").tag("push-to-talk")
+                            Text("Toggle").tag("toggle")
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .frame(width: 200)
+                    }
+                    settingHint("Push-to-Talk: hold key to record. Toggle: press to start/stop")
+                }
+            } header: {
+                Label("Input", systemImage: "keyboard")
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
 // MARK: - Transcription Tab
 
 private struct TranscriptionTab: View {
     @ObservedObject var config: ConfigManager
-
-    private let maxVocabularyChars = 1000
-
-    private var charsUsed: Int { config.initialPrompt.count }
-    private var charsRemaining: Int { max(0, maxVocabularyChars - charsUsed) }
-    private var isOverLimit: Bool { charsUsed > maxVocabularyChars }
 
     var body: some View {
         Form {
@@ -264,6 +266,23 @@ private struct TranscriptionTab: View {
                 Label("Recognition", systemImage: "globe")
             }
 
+        }
+        .formStyle(.grouped)
+    }
+}
+
+// MARK: - Vocabulary Tab
+
+private struct VocabularyTab: View {
+    @ObservedObject var config: ConfigManager
+
+    private let maxVocabularyChars = 1000
+
+    private var charsUsed: Int { config.initialPrompt.count }
+    private var isOverLimit: Bool { charsUsed > maxVocabularyChars }
+
+    var body: some View {
+        Form {
             Section {
                 VStack(alignment: .leading, spacing: 8) {
                     TextEditor(text: $config.initialPrompt)
@@ -297,224 +316,6 @@ private struct TranscriptionTab: View {
             }
         }
         .formStyle(.grouped)
-    }
-}
-
-// MARK: - About Tab
-
-private struct AboutTab: View {
-    @ObservedObject var daemon: DaemonManager
-
-    private let repoURL = "https://github.com/Advisior/local-stt"
-    private let advisiorURL = "https://www.advisior.de"
-    private let linkedInURL = "https://www.linkedin.com/in/uwe-franke/"
-    private let originalAuthorURL = "https://github.com/jarrodwatts"
-    private let semanticAnchorsURL = "https://github.com/LLM-Coding/Semantic-Anchors"
-
-    var body: some View {
-        VStack(spacing: 12) {
-            Spacer()
-
-            // App icon
-            Image(systemName: daemon.isRunning ? "mic.fill" : "mic.slash.fill")
-                .font(.system(size: 44))
-                .foregroundStyle(daemon.isRunning ? .green : .secondary)
-
-            Text("Local-STT")
-                .font(.title2.bold())
-
-            Text("Version \(AppInfo.version)")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-
-            // Status card
-            GroupBox {
-                VStack(spacing: 10) {
-                    aboutRow(
-                        icon: "circle.fill",
-                        label: "Daemon",
-                        value: daemon.isRunning ? "Running" : "Stopped",
-                        tint: daemon.isRunning ? .green : .red.opacity(0.7)
-                    )
-                    Divider()
-                    aboutRow(icon: "cpu", label: "Runtime", value: "Apple Silicon (MLX)")
-                    Divider()
-                    aboutRow(icon: "lock.shield", label: "Privacy", value: "100% local, no cloud")
-                    Divider()
-                    aboutRow(icon: "doc.text", label: "License", value: "MIT License")
-                }
-                .padding(4)
-            }
-            .frame(maxWidth: 320)
-
-            // Links
-            VStack(spacing: 6) {
-                linkButton(
-                    icon: "link",
-                    text: "GitHub Repository",
-                    url: repoURL
-                )
-
-                linkButton(
-                    icon: "person.circle",
-                    text: "Uwe Franke \u{2014} LinkedIn",
-                    url: linkedInURL
-                )
-            }
-
-            Spacer()
-
-            // Credits
-            VStack(spacing: 4) {
-                HStack(spacing: 4) {
-                    Text("Originally created by")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.tertiary)
-                    creditLink("Jarrod Watts", url: originalAuthorURL)
-                }
-
-                HStack(spacing: 4) {
-                    creditLink("Semantic Anchors", url: semanticAnchorsURL)
-                    Text("by Ralf M\u{00FC}ller")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.tertiary)
-                }
-
-                // Made with love footer
-                HStack(spacing: 4) {
-                    Text("Maintained with")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.tertiary)
-                    Image(systemName: "heart.fill")
-                        .font(.system(size: 9))
-                        .foregroundStyle(.red)
-                    Text("by")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.tertiary)
-
-                    Button {
-                        if let url = URL(string: advisiorURL) {
-                            NSWorkspace.shared.open(url)
-                        }
-                    } label: {
-                        AdvisiorLogoView()
-                    }
-                    .buttonStyle(.plain)
-                    .onHover { hovering in
-                        if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
-                    }
-                }
-            }
-            .padding(.bottom, 8)
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private func aboutRow(
-        icon: String,
-        label: String,
-        value: String,
-        tint: Color = .secondary
-    ) -> some View {
-        HStack {
-            Image(systemName: icon)
-                .font(.system(size: 10))
-                .foregroundStyle(tint)
-                .frame(width: 16)
-            Text(label)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text(value)
-                .font(.system(size: 12, weight: .medium))
-        }
-    }
-
-    private func creditLink(_ text: String, url: String) -> some View {
-        Button {
-            if let u = URL(string: url) {
-                NSWorkspace.shared.open(u)
-            }
-        } label: {
-            Text(text)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.blue.opacity(0.7))
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering in
-            if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
-        }
-    }
-
-    private func linkButton(icon: String, text: String, url: String) -> some View {
-        Button {
-            if let u = URL(string: url) {
-                NSWorkspace.shared.open(u)
-            }
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: icon)
-                    .font(.system(size: 11))
-                Text(text)
-                    .font(.system(size: 12))
-            }
-            .foregroundStyle(.blue)
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering in
-            if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
-        }
-    }
-}
-
-// MARK: - Advisior Logo
-
-private struct AdvisiorLogoView: View {
-    var body: some View {
-        if let logoImage = loadLogo() {
-            Image(nsImage: logoImage)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(height: 14)
-        } else {
-            Text("Advisior")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private func loadLogo() -> NSImage? {
-        // 1. Try main bundle resources
-        if let bundlePath = Bundle.main.path(forResource: "advisior_logo", ofType: "png") {
-            return NSImage(contentsOfFile: bundlePath)
-        }
-
-        // 2. Try SPM resource bundle inside main bundle
-        let resourcesDir = Bundle.main.bundlePath + "/Contents/Resources"
-        if let contents = try? FileManager.default.contentsOfDirectory(atPath: resourcesDir) {
-            for item in contents where item.hasSuffix(".bundle") {
-                let bundlePath = resourcesDir + "/" + item + "/advisior_logo.png"
-                if let img = NSImage(contentsOfFile: bundlePath) {
-                    return img
-                }
-            }
-        }
-
-        // 3. Direct file in Resources dir
-        let directPath = resourcesDir + "/advisior_logo.png"
-        if let img = NSImage(contentsOfFile: directPath) {
-            return img
-        }
-
-        // 4. Fallback: locate relative to executable
-        let execDir = Bundle.main.bundlePath
-        let parentDir = (execDir as NSString).deletingLastPathComponent
-        let devPath = parentDir + "/menubar-app/Sources/Resources/advisior_logo.png"
-        if let img = NSImage(contentsOfFile: devPath) {
-            return img
-        }
-
-        return nil
     }
 }
 
