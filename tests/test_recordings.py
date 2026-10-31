@@ -61,10 +61,10 @@ class _DaemonCase(unittest.TestCase):
     def rec_dir(self) -> Path:
         return self.config_dir / recordings.RECORDINGS_DIR
 
-    def dictate(self, seconds: float = 2.0, level: float = 0.1):
+    def dictate(self, seconds: float = 2.0, level: float = 0.1, recorded_private: bool = False):
         audio = np.full(int(16000 * seconds), level, dtype=np.float32)
         with self.assertLogs("claude_stt", level="DEBUG") as logs:
-            self.daemon._process_transcription((audio, None))
+            self.daemon._process_transcription((audio, None, recorded_private))
         return logs
 
     def stems(self):
@@ -147,6 +147,24 @@ class RecordingStoreTests(_DaemonCase):
         self.output_mock.side_effect = insert_then_end_private
         self.dictate()
         self.assertFalse(self.rec_dir.exists())
+
+    def test_ac3_given_recorded_in_private_mode_when_it_ends_before_transcribing_then_nothing_is_stored(self):
+        self.dictate(recorded_private=True)
+        self.daemon._engine = _FakeEngine("")
+        self.dictate(recorded_private=True)
+        self.daemon._engine = mock.Mock(transcribe=mock.Mock(side_effect=RuntimeError("engine")))
+        self.dictate(recorded_private=True)
+        self.assertFalse(self.rec_dir.exists())
+        self.assertFalse((self.config_dir / history.HISTORY_FILE).exists())
+
+    def test_ac3_given_private_mode_on_when_recording_stops_then_the_queue_item_carries_it(self):
+        (self.config_dir / history.PRIVATE_MODE_FILE).write_text('{"until": null}')
+        recorder = mock.Mock(stop=mock.Mock(return_value=np.full(32000, 0.1, dtype=np.float32)))
+        self.daemon._recorder = recorder
+        self.daemon._recording = True
+        self.daemon._record_start_time = 0.0
+        self.daemon._on_recording_stop()
+        self.assertTrue(self.daemon._transcribe_queue.get_nowait()[2])
 
     def test_ac5_given_write_fails_then_warning_without_text_and_dictation_continues(self):
         with mock.patch.object(recordings.wave, "open", side_effect=OSError(28, "No space left " + SECRET)):

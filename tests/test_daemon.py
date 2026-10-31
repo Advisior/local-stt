@@ -180,7 +180,7 @@ class UndoWiringTests(unittest.TestCase):
         with mock.patch.object(daemon_service, "output_text", return_value=inserted), \
                 mock.patch.object(d, "_append_history"), \
                 mock.patch.object(daemon_undo, "undo_last_insert") as send:
-            d._process_transcription((audio, None))
+            d._process_transcription((audio, None, False))
             d._on_undo_hotkey()
         send.assert_called_once_with(12)
 
@@ -203,7 +203,7 @@ class UndoWiringTests(unittest.TestCase):
         with mock.patch.object(daemon_service, "output_text", side_effect=paste_then_switch), \
                 mock.patch.object(d, "_append_history"), \
                 mock.patch.object(daemon_undo, "undo_last_insert") as send:
-            d._process_transcription((audio, None))
+            d._process_transcription((audio, None, False))
             d._on_undo_hotkey()
         send.assert_not_called()
 
