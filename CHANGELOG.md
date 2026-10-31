@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-10-23
+
+### Fixed
+- Saving from the menu bar app (Settings > Save, adding a correction in History) no longer rewrites `config.toml` from scratch. It updates the keys the app manages in place, replaces only the `[corrections]` entries and keeps every other key, comment and section, such as `audio_device`, `min_audio_db` or `min_recording_seconds`. The app no longer writes `sample_rate` and `max_recording_seconds`, so user values for them stay. An unreadable `config.toml` is left alone instead of being overwritten (#64)
+
 ## [0.10.0] - 2026-10-20
 
 ### Changed

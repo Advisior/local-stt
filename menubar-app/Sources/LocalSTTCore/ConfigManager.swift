@@ -45,8 +45,11 @@ class ConfigManager: ObservableObject {
         return newDir
     }
 
+    /// Directory this instance reads and writes; tests pass a temp dir.
+    let configDirectory: URL
+
     private var configURL: URL {
-        Self.configDir.appendingPathComponent("config.toml")
+        configDirectory.appendingPathComponent("config.toml")
     }
 
     /// Human-readable hotkey label for display in menus (e.g. "⌘R", "F1", "⌃⇧Space")
@@ -131,7 +134,8 @@ class ConfigManager: ObservableObject {
         }.joined(separator: " ")
     }
 
-    init(loadFromDisk: Bool = true) {
+    init(loadFromDisk: Bool = true, configDirectory: URL = ConfigManager.configDir) {
+        self.configDirectory = configDirectory
         if loadFromDisk { load() }
     }
 
@@ -266,45 +270,57 @@ class ConfigManager: ObservableObject {
 
     // MARK: - TOML Write
 
+    /// Managed `[claude-stt]` keys in write order with their TOML value;
+    /// nil removes the key line. `sample_rate` and `max_recording_seconds`
+    /// are not managed, so user values for them survive a save.
+    private var managedValues: [(key: String, value: String?)] {
+        [
+            ("hotkey", "\"\(escape(hotkey))\""),
+            ("mode", "\"\(mode)\""),
+            ("engine", "\"\(engine)\""),
+            ("moonshine_model", "\"\(escape(moonshineModel))\""),
+            ("whisper_model", "\"\(escape(whisperModel))\""),
+            ("parakeet_model", "\"\(escape(parakeetModel))\""),
+            ("output_mode", "\"\(escape(outputMode))\""),
+            ("sound_effects", "\(soundEffects)"),
+            ("auto_start_daemon", "\(autoStartDaemon)"),
+            ("mute_on_record", "\(muteOnRecord)"),
+            ("undo_hotkey", "\"\(escape(undoHotkey))\""),
+            ("undo_window_seconds", undoWindowSeconds),
+            ("undo_max_chars", undoMaxChars),
+            ("language", language.isEmpty ? nil : "\"\(escape(language))\""),
+            ("initial_prompt", initialPrompt.isEmpty ? nil : "\"\(escape(initialPrompt))\""),
+        ]
+    }
+
+    private var correctionLines: [String] {
+        corrections.sorted(by: { $0.key < $1.key }).map { wrong, right in
+            "\"\(escape(wrong))\" = \"\(escape(right))\""
+        }
+    }
+
+    /// Updates the managed keys and `[corrections]` in place and keeps every
+    /// other line of `config.toml` (unknown keys, comments, other sections).
     func save() {
         validate()
-        var lines = ["[claude-stt]"]
-        lines.append("hotkey = \"\(escape(hotkey))\"")
-        lines.append("mode = \"\(mode)\"")
-        lines.append("engine = \"\(engine)\"")
-        lines.append("moonshine_model = \"\(escape(moonshineModel))\"")
-        lines.append("whisper_model = \"\(escape(whisperModel))\"")
-        lines.append("parakeet_model = \"\(escape(parakeetModel))\"")
-        lines.append("sample_rate = 16000")
-        lines.append("max_recording_seconds = 300")
-        lines.append("output_mode = \"\(escape(outputMode))\"")
-        lines.append("sound_effects = \(soundEffects)")
-        lines.append("auto_start_daemon = \(autoStartDaemon)")
-        lines.append("mute_on_record = \(muteOnRecord)")
-        lines.append("undo_hotkey = \"\(escape(undoHotkey))\"")
-        lines.append("undo_window_seconds = \(undoWindowSeconds)")
-        lines.append("undo_max_chars = \(undoMaxChars)")
-
-        if !language.isEmpty {
-            lines.append("language = \"\(escape(language))\"")
-        }
-        if !initialPrompt.isEmpty {
-            lines.append("initial_prompt = \"\(escape(initialPrompt))\"")
-        }
-
-        if !corrections.isEmpty {
-            lines.append("")
-            lines.append("[corrections]")
-            for (wrong, right) in corrections.sorted(by: { $0.key < $1.key }) {
-                lines.append("\"\(escape(wrong))\" = \"\(escape(right))\"")
+        let fm = FileManager.default
+        let existing: String?
+        if fm.fileExists(atPath: configURL.path) {
+            // Never replace a file we could not read; that would drop its keys.
+            guard let text = try? String(contentsOf: configURL, encoding: .utf8) else {
+                NSLog("Claude STT: config.toml unreadable, not saving")
+                return
             }
+            existing = text
+        } else {
+            existing = nil
         }
 
-        let content = lines.joined(separator: "\n") + "\n"
-
-        try? FileManager.default.createDirectory(
-            at: Self.configDir, withIntermediateDirectories: true
+        let content = Self.mergedConfig(
+            existing: existing, managed: managedValues, corrections: correctionLines
         )
+
+        try? fm.createDirectory(at: configDirectory, withIntermediateDirectories: true)
         try? content.write(to: configURL, atomically: true, encoding: .utf8)
     }
 
