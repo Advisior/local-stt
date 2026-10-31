@@ -120,6 +120,7 @@ For advanced users, the config file is at `~/.config/local-stt/config.toml` and 
 | `undo_hotkey` | `""` (off) | macOS only. Removes the last dictation insert with Backspaces, see [Undo the last dictation](#undo-the-last-dictation). Must differ from `hotkey` |
 | `undo_window_seconds` | `60` | How long after an insert the undo hotkey still works |
 | `undo_max_chars` | `400` | Longer inserts are not undone |
+| `debug_keep_recordings` | `0` (off) | Keep the newest N dictations as WAV for benchmarks, see [Debug recordings and benchmark](#debug-recordings-and-benchmark) |
 
 ### Undo the last dictation
 
@@ -141,6 +142,31 @@ initial_prompt = "TypeScript, React, Kubernetes, PostgreSQL, GraphQL, WebSocket,
 ```
 
 Keep it under ~500 characters. Only add terms that Whisper would otherwise misspell.
+
+### Debug recordings and benchmark
+
+To decide on a model or prompt with numbers instead of guesses, the daemon can keep your real dictations and a script runs them through several variants.
+
+**Recording store.** Set a positive integer in `config.toml` and restart the daemon:
+
+```toml
+debug_keep_recordings = 20
+```
+
+Every recording that reaches the engine is then written to `~/.config/local-stt/recordings/` as `<timestamp>.wav` (16 kHz mono 16-bit PCM) plus `<timestamp>.json` with duration, level, engine, model, language, prompt, the raw engine output and the final text. Recordings without recognized speech are kept too. Only the newest N pairs stay; older ones are deleted after each write. Nothing is stored in private mode. `0`, a missing key or an invalid value (negative, not an integer) means off.
+
+These files are personal data: your voice and everything you said. The folder is readable only by your user (0700, files 0600) and never leaves the device. To delete everything, remove the folder: `rm -rf ~/.config/local-stt/recordings`. To stop recording, set `debug_keep_recordings = 0` or remove the line and restart the daemon. The menu bar Settings do not know this key yet and drop it when they save, so set it again after changing settings there.
+
+**Benchmark.** Copy the recordings you want to compare into a folder of their own (the store prunes old files), and next to each `<name>.wav` write the correct text as `<name>.ref.txt`. Then:
+
+```bash
+uv run python scripts/asr_benchmark.py ~/stt-samples \
+  --variant model=large-v3-turbo,language=de \
+  --variant model=large-v3,language=de,prompt=config \
+  --json results.json
+```
+
+A variant is `key=value` pairs separated by commas. Keys: `engine`, `model`, `language` (`auto` = detect) and `prompt` (literal text, `@path` to read a file, `config` for `initial_prompt` from `config.toml`). Missing `engine`, `model` and `language` come from `config.toml`; a missing `prompt` means no prompt. The script prints transcript, latency and word error rate (WER) per file and variant, a word diff (`-wrong +right`) for every file with errors, and a summary per variant. WER is the word-level edit distance after lowercasing and removing punctuation, divided by the number of reference words. Files without `.ref.txt`, or with an empty one, show `WER n/a`. Exit code 1 means no WAV in the folder, 2 an invalid variant. All variants load their models before the first transcription, so a broken variant fails fast, but several large models need memory at the same time. The first run of a model may download it.
 
 ---
 
@@ -209,7 +235,7 @@ tail -f ~/.config/local-stt/daemon.log
 
 - Audio captured from your microphone is processed entirely on-device
 - MLX Whisper runs locally on your Apple Silicon GPU
-- Audio is processed in memory and immediately discarded
+- Audio is processed in memory and immediately discarded, unless you switch on [debug recordings](#debug-recordings-and-benchmark)
 - Transcribed text only goes to the active window or clipboard
 - No telemetry, no analytics, no tracking
 

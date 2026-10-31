@@ -45,7 +45,7 @@ class ProcessTranscriptionTests(unittest.TestCase):
     def dictate(self):
         audio = np.full(16000 * 2, 0.1, dtype=np.float32)
         with self.assertLogs("claude_stt", level="DEBUG") as logs:
-            self.daemon._process_transcription((audio, None))
+            self.daemon._process_transcription((audio, None, False))
         return logs.output
 
     def history_texts(self):
@@ -133,7 +133,7 @@ class ProcessTranscriptionTests(unittest.TestCase):
         self.daemon._engine.transcribe.side_effect = RuntimeError("partial result Marker0815")
         audio = np.full(16000 * 2, 0.1, dtype=np.float32)
         with self.assertLogs("claude_stt", level="DEBUG") as logs:
-            self.daemon._process_transcription((audio, None))
+            self.daemon._process_transcription((audio, None, False))
         self.assert_marker_absent_type_present(logs, "RuntimeError")
 
 
