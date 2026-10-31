@@ -6,10 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
-## [0.9.2] - 2026-10-23
+## [0.11.4] - 2026-10-31
 
 ### Changed
 - `install.sh` installs the prebuilt `Local-STT.app` from the GitHub release that matches the checked-out version instead of compiling it, so a Mac with only the Command Line Tools (no Xcode) can install Local-STT. The remote install checks out the latest release tag instead of `main`. The bundle identifier and version are verified; on any download, unpack or verification error the script prints the reason and builds from source as before. `--from-source`, `--build-only` and runs from a local checkout still build with `scripts/build-app.sh` (#35)
+
+## [0.11.2] - 2026-10-31
+
+### Changed
+- Internal: the macOS key event intercept moved from `hotkey.py` to `hotkey_darwin.py`, and its tests moved to `tests/test_hotkey_darwin.py`, so both `hotkey.py` and `tests/test_hotkey.py` are below the 500-line limit again. No behavior change (#71)
+
+## [0.11.1] - 2026-10-31
+
+### Fixed
+- A hotkey that mixes a generic and a side-specific modifier, such as `ctrl+cmd_r`, now needs every listed key. Before, `ctrl` was dropped and the hotkey fired on `cmd_r` alone. `ctrl` accepts either Control key, `cmd_r` only the right Command key (#70)
+
+## [0.9.3] - 2026-10-23
+
+### Fixed
+- macOS: a hotkey ending in a character key (e.g. `ctrl+shift+r`) no longer reaches the focused app. The key's down, auto-repeat and up events are swallowed using the keycode of the actual press, so it works with any keyboard layout (#41)
+- macOS: generic modifiers in a hotkey (`ctrl`, `shift`, `alt`, `cmd`) cover both the left and the right key, so completing a combination with the right-hand modifier no longer leaks that key to the app. Side-specific hotkeys such as `cmd_r` still swallow only the named side (#41)
+- macOS: modifier events are classified as press or release from the key's own device flag bit. After a lost release, the next press of that modifier is no longer swallowed unless it completes a hotkey again (#41)
 
 ## [0.9.0] - 2026-10-20
 
