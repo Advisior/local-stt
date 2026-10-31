@@ -19,6 +19,7 @@ except Exception as exc:
 
 from .errors import HotkeyError
 from .hotkey_darwin import MacInterceptMixin
+from .hotkey_pause import paused as _hotkeys_paused
 
 RECORD = "record"
 
@@ -355,7 +356,7 @@ class HotkeyListener(MacInterceptMixin):
                 if not b.active
                 and b.keys.issubset({self._view(k, b) for k in self._pressed_keys})
             ]
-            if not matched:
+            if not matched or _hotkeys_paused():
                 return
             # "shift+f1" must not also fire "f1": the larger combination wins.
             winner = max(matched, key=lambda b: len(b.keys))
