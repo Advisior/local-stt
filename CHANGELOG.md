@@ -6,12 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
-## [0.9.1] - 2026-10-23
+## [0.11.6] - 2026-10-31
 
 ### Fixed
 - After the input device drops, errors or changes, the next dictation records from the current default input again without restarting Local-STT. A stream that sent no audio for 1 s is closed, PortAudio is re-initialized so it re-reads the device list, and a new stream opens on the configured device or the current default, at recording start and once during a running recording (audio from before the gap is kept). A recording that ended without audio also reopens the stream (#44)
 - On macOS the daemon follows changes of the system default input (for example AirPods to built-in mic) within 3 s while idle, unless `audio_device` is set (#44)
 - When the reopen fails or the new stream stays silent, the recording ends, the overlay shows "No microphone input. Check the input device.", the error sound plays and `daemon.log` names the device (#44)
+
+## [0.11.2] - 2026-10-31
+
+### Changed
+- Internal: the macOS key event intercept moved from `hotkey.py` to `hotkey_darwin.py`, and its tests moved to `tests/test_hotkey_darwin.py`, so both `hotkey.py` and `tests/test_hotkey.py` are below the 500-line limit again. No behavior change (#71)
+
+## [0.11.1] - 2026-10-31
+
+### Fixed
+- A hotkey that mixes a generic and a side-specific modifier, such as `ctrl+cmd_r`, now needs every listed key. Before, `ctrl` was dropped and the hotkey fired on `cmd_r` alone. `ctrl` accepts either Control key, `cmd_r` only the right Command key (#70)
+
+## [0.9.3] - 2026-10-23
+
+### Fixed
+- macOS: a hotkey ending in a character key (e.g. `ctrl+shift+r`) no longer reaches the focused app. The key's down, auto-repeat and up events are swallowed using the keycode of the actual press, so it works with any keyboard layout (#41)
+- macOS: generic modifiers in a hotkey (`ctrl`, `shift`, `alt`, `cmd`) cover both the left and the right key, so completing a combination with the right-hand modifier no longer leaks that key to the app. Side-specific hotkeys such as `cmd_r` still swallow only the named side (#41)
+- macOS: modifier events are classified as press or release from the key's own device flag bit. After a lost release, the next press of that modifier is no longer swallowed unless it completes a hotkey again (#41)
 
 ## [0.9.0] - 2026-10-20
 
