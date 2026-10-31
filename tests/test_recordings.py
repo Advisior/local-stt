@@ -166,6 +166,18 @@ class RecordingStoreTests(_DaemonCase):
         self.daemon._on_recording_stop()
         self.assertTrue(self.daemon._transcribe_queue.get_nowait()[2])
 
+    def test_ac3_given_private_mode_ends_while_recording_then_the_queue_item_stays_private(self):
+        private_file = self.config_dir / history.PRIVATE_MODE_FILE
+        private_file.write_text('{"until": null}')
+        self.daemon._recorder = mock.Mock(stop=mock.Mock(return_value=np.full(32000, 0.1, dtype=np.float32)))
+        with mock.patch.object(daemon_service, "play_sound"), \
+                mock.patch.object(self.daemon, "_overlay_send"):
+            self.daemon._on_recording_start()
+            private_file.unlink()
+            self.daemon._record_start_time = 0.0
+            self.daemon._on_recording_stop()
+        self.assertTrue(self.daemon._transcribe_queue.get_nowait()[2])
+
     def test_ac5_given_write_fails_then_warning_without_text_and_dictation_continues(self):
         with mock.patch.object(recordings.wave, "open", side_effect=OSError(28, "No space left " + SECRET)):
             logs = self.dictate()

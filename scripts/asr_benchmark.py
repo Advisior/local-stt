@@ -52,6 +52,8 @@ EXIT_INPUT = 1
 EXIT_SPEC = 2
 _PAIR_SPLIT = re.compile(r",(?=\s*[A-Za-z_]\w*\s*=)")
 _MODEL_FIELD = {"moonshine": "moonshine_model", "parakeet": "parakeet_model"}
+# Engines that ignore language and initial_prompt (see engine_factory.build_engine).
+_NO_PROMPT_ENGINES = ("moonshine", "parakeet")
 
 
 class SpecError(Exception):
@@ -91,6 +93,11 @@ def parse_variant(spec: str, base: Config) -> Variant:
     if engine not in ENGINES:
         raise SpecError(f"variant '{spec}': unknown engine '{engine}' (allowed: {', '.join(ENGINES)})")
     model = values.get("model") or getattr(base, _model_field(engine))
+    if engine in _NO_PROMPT_ENGINES:
+        given = [key for key in ("language", "prompt") if key in values]
+        if given:
+            raise SpecError(f"variant '{spec}': engine '{engine}' does not use {' or '.join(given)}")
+        return Variant(spec=spec, engine=engine, model=model, language=None, prompt=None)
     language = values.get("language", base.language or "auto")
     return Variant(
         spec=spec,

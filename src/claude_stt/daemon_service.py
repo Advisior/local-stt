@@ -52,6 +52,7 @@ class STTDaemon(UndoHotkeyMixin):
 
         # Recording state
         self._record_start_time: float = 0
+        self._private_at_start = False  # private mode was on when this recording began
         self._last_start_attempt: float = 0.0  # debounce double hotkey events
         self._last_duration_s: float = 0.0
         self._original_window: Optional[WindowInfo] = None
@@ -326,6 +327,7 @@ class STTDaemon(UndoHotkeyMixin):
             if self.config.mute_on_record:
                 self._mute_system_audio()
             self._record_start_time = time.time()
+            self._private_at_start = history.private_mode_active()
 
             # Capture the active window
             self._original_window = get_active_window()
@@ -378,7 +380,7 @@ class STTDaemon(UndoHotkeyMixin):
         if audio is not None and len(audio) > 0:
             try:
                 self._transcribe_queue.put_nowait(
-                    (audio, window_info, history.private_mode_active())
+                    (audio, window_info, self._private_at_start or history.private_mode_active())
                 )
             except queue.Full:
                 self._logger.warning("Dropping transcription; queue is full")

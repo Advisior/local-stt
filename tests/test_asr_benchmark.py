@@ -152,6 +152,17 @@ class BenchmarkRunTests(_BenchCase):
         moon = bench.variant_config(bench.parse_variant("engine=moonshine,model=moonshine/tiny", base), base)
         self.assertEqual(moon.moonshine_model, "moonshine/tiny")
 
+    def test_ac9_given_language_or_prompt_for_engine_without_them_then_parse_fails(self):
+        for spec in ("engine=moonshine,language=de", "engine=parakeet,prompt=Fachbegriffe"):
+            with self.subTest(spec=spec), self.assertRaises(bench.SpecError) as ctx:
+                bench.parse_variant(spec, bench.Config())
+            self.assertIn(spec, str(ctx.exception))
+
+    def test_ac9_given_engine_without_language_or_prompt_then_config_values_are_not_reported(self):
+        base = bench.Config(engine="mlx", language="de", initial_prompt="cfg")
+        variant = bench.parse_variant("engine=parakeet", base)
+        self.assertEqual((variant.language, variant.prompt), (None, None))
+
     def test_ac10_given_wav_without_reference_then_wer_is_na_and_run_succeeds(self):
         self.add_fixtures()
         write_wav(self.folder / "c.wav", 0.125)
