@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-10-23
+
+### Fixed
+- macOS: a hotkey ending in a character key (e.g. `ctrl+shift+r`) no longer reaches the focused app. The key's down, auto-repeat and up events are swallowed using the keycode of the actual press, so it works with any keyboard layout (#41)
+- macOS: generic modifiers in a hotkey (`ctrl`, `shift`, `alt`, `cmd`) cover both the left and the right key, so completing a combination with the right-hand modifier no longer leaks that key to the app. Side-specific hotkeys such as `cmd_r` still swallow only the named side (#41)
+- macOS: modifier events are classified as press or release from the key's own device flag bit. After a lost release, the next press of that modifier is no longer swallowed unless it completes a hotkey again (#41)
+
 ## [0.9.0] - 2026-10-20
 
 ### Added
