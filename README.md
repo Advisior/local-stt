@@ -114,8 +114,6 @@ For advanced users, the config file is at `~/.config/local-stt/config.toml` and 
 | `whisper_model` | `large-v3-turbo` on Apple Silicon, else `medium` | Model size: `tiny`, `base`, `small`, `medium`, `large`, `large-v3`, `large-v3-turbo` |
 | `language` | auto-detect | Recognition language (2-letter code); omit the key for auto-detect (an empty string is not valid) |
 | `initial_prompt` | — | Short style and language hint for Whisper, placed first in the prompt |
-| `vocabulary` | `[]` | Terms Whisper should know, appended after the hint as long as they fit Whisper's prompt |
-| `vocabulary_from_corrections` | `false` | Also append the right-hand side of each `[corrections]` entry to the vocabulary |
 | `sound_effects` | `true` | Audio feedback on recording start/stop |
 | `output_mode` | `auto` | Text insertion: `auto`, `injection` (keyboard), `clipboard`, `clipboard_paste` (clipboard + Cmd+V, most compatible) |
 | `max_recording_seconds` | `300` | Maximum recording duration in seconds |
@@ -136,21 +134,26 @@ Otherwise the overlay shows "Nothing to undo" or "Too long to undo" and the log 
 
 ### Custom Vocabulary
 
-Whisper reads at most 223 prompt tokens and silently cuts the *beginning* of a longer prompt. Split the prompt into a short hint and a vocabulary list:
+Whisper reads at most 223 prompt tokens and silently cuts the *beginning* of a longer prompt. Keep `initial_prompt` (the Vocabulary field in Settings) to a short style and language hint, and list the terms in `~/.config/local-stt/vocabulary.toml`:
 
 ```toml
+# config.toml
 [claude-stt]
 initial_prompt = "Gesprochener Text auf Deutsch."
-vocabulary = ["TypeScript", "Kubernetes", "PostgreSQL", "GraphQL", "Terraform"]
-vocabulary_from_corrections = true   # optional, default false
 
 [corrections]
 "Brot" = "Prod"
 ```
 
-The daemon builds the prompt as hint, then terms in order (vocabulary first, correction targets after it). The hint is always kept. When the terms do not fit, the remaining ones are left out and `daemon.log` lists them, so put the most important terms first. Only add terms that Whisper would otherwise misspell.
+```toml
+# vocabulary.toml (most important terms first)
+terms = ["TypeScript", "Kubernetes", "PostgreSQL", "GraphQL", "Terraform"]
+from_corrections = true   # optional, default false: also add the right side of each correction
+```
 
-Existing configs with a single `initial_prompt` keep working unchanged: it is used as the hint and nothing is rewritten. If it is longer than the budget the log warns; move the proper nouns into `vocabulary`. `[corrections]` are still applied after transcription as before.
+The daemon builds the prompt as hint, then terms in order (`terms` first, correction targets after them). The hint is always kept. When the terms do not fit, the remaining ones are left out, `daemon.log` lists them and Settings shows a warning under Vocabulary. Edits to `vocabulary.toml` and new corrections apply from the next dictation, without a restart. Only add terms that Whisper would otherwise misspell.
+
+`vocabulary.toml` is a separate file because the menu bar app rewrites `config.toml` on save. Existing configs with a single `initial_prompt` keep working unchanged: it is used as the hint and nothing is rewritten. If it is longer than the budget, the log and Settings warn; move the proper nouns into `vocabulary.toml`. `[corrections]` are still applied after transcription as before.
 
 ---
 

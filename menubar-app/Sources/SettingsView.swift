@@ -227,6 +227,7 @@ private struct TranscriptionTab: View {
     @ObservedObject var config: ConfigManager
 
     private let maxVocabularyChars = 1000
+    @State private var promptStatus: PromptStatus?
 
     private var charsUsed: Int { config.initialPrompt.count }
     private var charsRemaining: Int { max(0, maxVocabularyChars - charsUsed) }
@@ -291,12 +292,19 @@ private struct TranscriptionTab: View {
                     }
 
                     settingHint("Add domain-specific terms the engine might not recognize correctly, e.g. TypeScript, Kubernetes, PostgreSQL, GraphQL, Terraform, CI/CD, OAuth, WebSocket")
+
+                    if let warning = promptStatus?.warning {
+                        Label(warning, systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
                 }
             } header: {
                 Label("Vocabulary", systemImage: "textformat.abc")
             }
         }
         .formStyle(.grouped)
+        .onAppear { promptStatus = PromptStatus.load() }
     }
 }
 

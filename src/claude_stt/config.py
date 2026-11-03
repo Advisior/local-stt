@@ -24,6 +24,8 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+VOCABULARY_FILE = "vocabulary.toml"
+
 
 def mlx_supported() -> bool:
     """Check whether MLX can run here (macOS on Apple Silicon)."""
@@ -78,6 +80,7 @@ class Config:
     # Language settings
     language: str | None = None
     initial_prompt: str | None = None  # style and language hint (#51)
+    # From vocabulary.toml, which the menu bar app never rewrites (#51)
     vocabulary: list = field(default_factory=list)  # terms appended within the token budget
     vocabulary_from_corrections: bool = False  # also add [corrections] targets
     corrections: dict = field(default_factory=dict)
@@ -98,6 +101,29 @@ class Config:
             self.corrections = {str(k): str(v) for k, v in data.get("corrections", {}).items()}
         except Exception:
             pass
+
+    def reload_vocabulary(self) -> None:
+        """Hot-reload vocabulary.toml."""
+        self.vocabulary, self.vocabulary_from_corrections = self._read_vocabulary_file()
+        self._validate_vocabulary()
+
+    @classmethod
+    def get_vocabulary_path(cls) -> Path:
+        return cls.get_config_dir() / VOCABULARY_FILE
+
+    @classmethod
+    def _read_vocabulary_file(cls) -> tuple[object, object]:
+        """Return (terms, from_corrections) from vocabulary.toml, or defaults."""
+        path = cls.get_vocabulary_path()
+        if tomli is None or not path.exists():
+            return [], False
+        try:
+            with open(path, "rb") as f:
+                data = tomli.load(f)
+        except Exception as exc:
+            logger.warning("Ignoring unreadable %s: %s", path, exc)
+            return [], False
+        return data.get("terms", []), data.get("from_corrections", False)
 
     @classmethod
     def get_config_dir(cls) -> Path:
@@ -135,7 +161,9 @@ class Config:
         if not config_path.exists():
             legacy_path = cls._legacy_config_path()
             if legacy_path is None:
-                return cls()
+                config = cls()
+                config.reload_vocabulary()
+                return config
 
         if tomli is None:
             logger.warning("tomli not installed; using default config")
@@ -148,6 +176,7 @@ class Config:
 
             stt_config = data.get("claude-stt", {})
             corrections = {str(k): str(v) for k, v in data.get("corrections", {}).items()}
+            vocabulary, from_corrections = cls._read_vocabulary_file()
             config = cls(
                 hotkey=stt_config.get("hotkey", cls.hotkey),
                 mode=stt_config.get("mode", cls.mode),
@@ -172,10 +201,8 @@ class Config:
                 mute_on_record=stt_config.get("mute_on_record", cls.mute_on_record),
                 language=stt_config.get("language", cls.language),
                 initial_prompt=stt_config.get("initial_prompt", cls.initial_prompt),
-                vocabulary=stt_config.get("vocabulary", []),
-                vocabulary_from_corrections=stt_config.get(
-                    "vocabulary_from_corrections", cls.vocabulary_from_corrections
-                ),
+                vocabulary=vocabulary,
+                vocabulary_from_corrections=from_corrections,
                 corrections=corrections,
             )
             config = config.validate()
@@ -227,10 +254,6 @@ class Config:
             section["language"] = self.language
         if self.initial_prompt:
             section["initial_prompt"] = self.initial_prompt
-        if self.vocabulary:
-            section["vocabulary"] = list(self.vocabulary)
-        if self.vocabulary_from_corrections:
-            section["vocabulary_from_corrections"] = True
 
         data = {"claude-stt": section}
 

@@ -90,9 +90,14 @@ class EffectivePromptTests(unittest.TestCase):
         self.assertEqual(effective_prompt(config, count_tokens=words), "Deutsch. Advisior, Prod")
 
     def test_dropped_terms_are_logged_as_a_warning(self):
+        from claude_stt.prompt import PromptRefresher
+
         config = Config(initial_prompt="a b", vocabulary=["t1", "t2", "t3"])
-        with self.assertLogs("claude_stt.prompt", level="WARNING") as logs:
-            effective_prompt(config, count_tokens=words, budget=3)
+        refresher = PromptRefresher(config, count_tokens=words, budget=3)
+        with mock.patch("claude_stt.prompt.write_status"), self.assertLogs(
+            "claude_stt.prompt", level="WARNING"
+        ) as logs:
+            refresher.refresh(FakeEngine(), reload=False)
         self.assertIn("t2, t3", "\n".join(logs.output))
 
     def test_engine_factory_passes_the_effective_prompt_to_whisper(self):
@@ -109,7 +114,9 @@ class EffectivePromptTests(unittest.TestCase):
         self.assertEqual(count_tokens(""), 0)
 
 
-class VocabularyConfigTests(unittest.TestCase):
+class VocabularyFileTests(unittest.TestCase):
+    """Vocabulary lives in vocabulary.toml, which the menu bar app never rewrites."""
+
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -119,30 +126,63 @@ class VocabularyConfigTests(unittest.TestCase):
         self.addCleanup(env.stop)
         os.environ.pop("CLAUDE_PLUGIN_ROOT", None)
 
-    def _write(self, text: str) -> None:
-        (self.config_dir / "config.toml").write_text(text)
+    def _write(self, name: str, text: str) -> None:
+        (self.config_dir / name).write_text(text)
 
     def test_old_config_with_a_single_initial_prompt_loads_as_the_hint(self):
-        self._write('[claude-stt]\ninitial_prompt = "Advisior, Cotedo"\n')
+        self._write("config.toml", '[claude-stt]\ninitial_prompt = "Advisior, Cotedo"\n')
         config = Config.load()
         self.assertEqual(config.initial_prompt, "Advisior, Cotedo")
         self.assertEqual(config.vocabulary, [])
         self.assertFalse(config.vocabulary_from_corrections)
 
-    def test_loading_an_old_config_does_not_rewrite_the_file(self):
+    def test_loading_an_old_config_does_not_rewrite_or_create_files(self):
         original = '[claude-stt]\ninitial_prompt = "Advisior"\n\n[corrections]\n"a" = "b"\n'
-        self._write(original)
+        self._write("config.toml", original)
         Config.load()
         self.assertEqual((self.config_dir / "config.toml").read_text(), original)
+        self.assertEqual(sorted(p.name for p in self.config_dir.iterdir()), ["config.toml"])
 
-    def test_vocabulary_list_is_loaded(self):
+    def test_vocabulary_file_is_loaded(self):
+        self._write("config.toml", '[claude-stt]\ninitial_prompt = "Deutsch."\n')
         self._write(
-            '[claude-stt]\ninitial_prompt = "Deutsch."\n'
-            'vocabulary = ["Advisior", "Cotedo"]\nvocabulary_from_corrections = true\n'
+            "vocabulary.toml", 'terms = ["Advisior", "Cotedo"]\nfrom_corrections = true\n'
         )
         config = Config.load()
         self.assertEqual(config.vocabulary, ["Advisior", "Cotedo"])
         self.assertTrue(config.vocabulary_from_corrections)
+
+    def test_vocabulary_file_is_used_without_a_config_toml(self):
+        self._write("vocabulary.toml", 'terms = ["Advisior"]\n')
+        self.assertEqual(Config.load().vocabulary, ["Advisior"])
+
+    def test_vocabulary_survives_an_app_style_rewrite_of_config_toml(self):
+        self._write("vocabulary.toml", 'terms = ["Advisior"]\nfrom_corrections = true\n')
+        self._write("config.toml", '[claude-stt]\nhotkey = "f1"\n')
+        # The current menu bar app rewrites config.toml from scratch on save.
+        self._write("config.toml", '[claude-stt]\nhotkey = "f2"\n\n[corrections]\n"x" = "y"\n')
+        config = Config.load()
+        self.assertEqual(config.vocabulary, ["Advisior"])
+        self.assertTrue(config.vocabulary_from_corrections)
+
+    def test_config_save_never_touches_the_vocabulary_file(self):
+        original = '# my terms\nterms = ["Advisior"]\n'
+        self._write("vocabulary.toml", original)
+        Config.load().save()
+        self.assertEqual((self.config_dir / "vocabulary.toml").read_text(), original)
+        self.assertNotIn("vocabulary", (self.config_dir / "config.toml").read_text())
+
+    def test_reload_vocabulary_picks_up_edits(self):
+        config = Config.load()
+        self._write("vocabulary.toml", 'terms = ["Cotedo"]\n')
+        config.reload_vocabulary()
+        self.assertEqual(config.vocabulary, ["Cotedo"])
+
+    def test_broken_vocabulary_file_is_ignored_with_a_warning(self):
+        self._write("vocabulary.toml", "terms = [unclosed\n")
+        with self.assertLogs("claude_stt.config", level="WARNING"):
+            config = Config.load()
+        self.assertEqual(config.vocabulary, [])
 
     def test_vocabulary_given_as_a_comma_separated_string_is_split(self):
         config = Config(vocabulary="Advisior, Cotedo ,,KiCo").validate()
@@ -157,19 +197,164 @@ class VocabularyConfigTests(unittest.TestCase):
         config = Config(vocabulary=["Advisior", 3, None, " Cotedo "]).validate()
         self.assertEqual(config.vocabulary, ["Advisior", "Cotedo"])
 
-    def test_vocabulary_round_trips_through_save(self):
-        Config(
-            initial_prompt="Deutsch.", vocabulary=["Advisior"], vocabulary_from_corrections=True
-        ).save()
-        config = Config.load()
-        self.assertEqual(config.initial_prompt, "Deutsch.")
-        self.assertEqual(config.vocabulary, ["Advisior"])
-        self.assertTrue(config.vocabulary_from_corrections)
 
-    def test_save_omits_new_keys_when_unused(self):
-        Config().save()
-        text = (self.config_dir / "config.toml").read_text()
-        self.assertNotIn("vocabulary", text)
+class FallbackTokenCountTests(unittest.TestCase):
+    """Without the Whisper tokenizer the count must never be below the real one."""
+
+    def setUp(self):
+        patcher = mock.patch("claude_stt.prompt._whisper_tokenizer", return_value=None)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_fallback_counts_utf8_bytes_of_the_encoded_prompt(self):
+        from claude_stt.prompt import count_tokens
+
+        # Byte-level BPE emits at least one byte per token, so bytes bound tokens.
+        # 32 x "မြန်မာ" is 576 bytes and 576 multilingual Whisper tokens.
+        text = "မြန်မာ" * 32
+        self.assertGreaterEqual(count_tokens(text), 576)
+        self.assertEqual(count_tokens("ab"), len(" ab".encode("utf-8")))
+
+    def test_multilingual_term_at_the_boundary_is_dropped_not_the_hint(self):
+        hint = "Deutsch."
+        term = "မြန်မာ" * 12  # 216 bytes; hint + term exceeds 223
+        result = build_prompt(hint, [term])
+        self.assertEqual(result.text, hint)
+        self.assertEqual(result.dropped, [term])
+
+    def test_ascii_terms_up_to_the_bound_are_kept(self):
+        term = "a" * 221  # " " + 221 + nothing else = 222 bytes
+        result = build_prompt(None, [term])
+        self.assertEqual(result.text, term)
+
+
+class FakeEngine:
+    def __init__(self, prompt=None):
+        self.initial_prompt = prompt
+
+
+class PromptRefresherTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.config_dir = Path(tmp.name)
+        env = mock.patch.dict(os.environ, {"LOCAL_STT_CONFIG_DIR": tmp.name})
+        env.start()
+        self.addCleanup(env.stop)
+        os.environ.pop("CLAUDE_PLUGIN_ROOT", None)
+
+    def _refresher(self, config, budget=WHISPER_PROMPT_TOKENS):
+        from claude_stt.prompt import PromptRefresher
+
+        return PromptRefresher(config, count_tokens=words, budget=budget)
+
+    def test_new_correction_target_reaches_the_engine_without_a_restart(self):
+        (self.config_dir / "config.toml").write_text(
+            '[claude-stt]\ninitial_prompt = "Deutsch."\n'
+        )
+        (self.config_dir / "vocabulary.toml").write_text("from_corrections = true\n")
+        config = Config.load()
+        engine = FakeEngine()
+        refresher = self._refresher(config)
+        refresher.refresh(engine)
+        self.assertEqual(engine.initial_prompt, "Deutsch.")
+
+        # The History view adds a correction while the daemon runs.
+        (self.config_dir / "config.toml").write_text(
+            '[claude-stt]\ninitial_prompt = "Deutsch."\n\n[corrections]\n"Brot" = "Prod"\n'
+        )
+        refresher.refresh(engine)
+        self.assertEqual(engine.initial_prompt, "Deutsch. Prod")
+
+    def test_vocabulary_file_edits_reach_the_engine_without_a_restart(self):
+        config = Config.load()
+        engine = FakeEngine()
+        refresher = self._refresher(config)
+        refresher.refresh(engine)
+        self.assertIsNone(engine.initial_prompt)
+        (self.config_dir / "vocabulary.toml").write_text('terms = ["Advisior"]\n')
+        refresher.refresh(engine)
+        self.assertEqual(engine.initial_prompt, "Advisior")
+
+    def test_unchanged_inputs_do_not_log_again(self):
+        config = Config(initial_prompt="a b", vocabulary=["t1", "t2"])
+        refresher = self._refresher(config, budget=3)
+        engine = FakeEngine()
+        with self.assertLogs("claude_stt.prompt", level="WARNING") as logs:
+            refresher.refresh(engine, reload=False)
+            refresher.refresh(engine, reload=False)
+        self.assertEqual(len(logs.output), 1)
+
+    def test_engines_without_a_prompt_are_left_alone(self):
+        refresher = self._refresher(Config(vocabulary=["Advisior"]))
+        engine = object()
+        refresher.refresh(engine, reload=False)  # must not raise
+        self.assertFalse((self.config_dir / "prompt_status.json").exists())
+
+    def test_status_file_lists_dropped_terms_for_settings(self):
+        import json
+
+        config = Config(initial_prompt="a b", vocabulary=["t1", "t2", "t3"])
+        with self.assertLogs("claude_stt.prompt", level="WARNING"):
+            self._refresher(config, budget=3).refresh(FakeEngine(), reload=False)
+        status = json.loads((self.config_dir / "prompt_status.json").read_text())
+        self.assertEqual(status["budget"], 3)
+        self.assertEqual(status["dropped"], ["t2", "t3"])
+        self.assertFalse(status["hint_over_budget"])
+
+    def test_status_file_is_cleared_when_everything_fits(self):
+        import json
+
+        config = Config(initial_prompt="a b", vocabulary=["t1"])
+        self._refresher(config).refresh(FakeEngine(), reload=False)
+        status = json.loads((self.config_dir / "prompt_status.json").read_text())
+        self.assertEqual(status["dropped"], [])
+        self.assertFalse(status["hint_over_budget"])
+
+    def test_mock_engines_are_left_alone(self):
+        engine = mock.Mock()
+        self._refresher(Config(vocabulary=["Advisior"])).refresh(engine, reload=False)
+        self.assertFalse((self.config_dir / "prompt_status.json").exists())
+
+
+class DaemonPromptTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.config_dir = Path(tmp.name)
+        env = mock.patch.dict(os.environ, {"LOCAL_STT_CONFIG_DIR": tmp.name})
+        env.start()
+        self.addCleanup(env.stop)
+        os.environ.pop("CLAUDE_PLUGIN_ROOT", None)
+
+    def test_a_correction_added_while_running_steers_the_next_transcription(self):
+        from claude_stt import daemon_service
+        from claude_stt.daemon_service import STTDaemon
+
+        (self.config_dir / "config.toml").write_text('[claude-stt]\ninitial_prompt = "Deutsch."\n')
+        (self.config_dir / "vocabulary.toml").write_text("from_corrections = true\n")
+        d = STTDaemon(Config.load())
+        d._overlay_send = mock.Mock()
+        seen = []
+
+        class Engine:
+            initial_prompt = "Deutsch."
+
+            def transcribe(self, audio, sample_rate):
+                seen.append(self.initial_prompt)
+                return "Hallo"
+
+        d._engine = Engine()
+        (self.config_dir / "config.toml").write_text(
+            '[claude-stt]\ninitial_prompt = "Deutsch."\n\n[corrections]\n"Brot" = "Prod"\n'
+        )
+        audio = daemon_service.np.ones(16000, dtype="float32") * 0.1
+        with mock.patch.object(daemon_service, "output_text", return_value=None), \
+                mock.patch.object(d, "_append_history"), \
+                mock.patch.object(daemon_service, "play_sound"), \
+                mock.patch.object(daemon_service, "get_active_window", return_value=None):
+            d._process_transcription((audio, None))
+        self.assertEqual(seen, ["Deutsch. Prod"])
 
 
 if __name__ == "__main__":

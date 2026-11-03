@@ -9,11 +9,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ## [0.12.0] - 2026-11-03
 
 ### Added
-- New `vocabulary` list in `[claude-stt]`. The daemon builds the Whisper prompt from the `initial_prompt` hint followed by as many vocabulary terms as fit Whisper's 223-token prompt, so the hint is no longer cut off. Terms that do not fit are dropped from the end and listed as a warning in `daemon.log`; a hint that alone exceeds the budget is also logged (#51)
-- New opt-in `vocabulary_from_corrections` (default `false`) appends the right-hand side of each `[corrections]` entry to the vocabulary, after the `vocabulary` terms (#51)
+- New `~/.config/local-stt/vocabulary.toml` with a `terms` list. The daemon builds the Whisper prompt from the `initial_prompt` hint followed by as many terms as fit Whisper's 223-token prompt, so the hint is no longer cut off. Terms that do not fit are dropped from the end, listed as a warning in `daemon.log` and shown under Vocabulary in Settings; a hint that alone exceeds the budget is reported the same way. The vocabulary lives in its own file because the menu bar app rewrites `config.toml` on save (#51)
+- `from_corrections = true` in `vocabulary.toml` (default `false`) adds the right-hand side of each `[corrections]` entry to the vocabulary, after `terms` (#51)
+- Edits to `vocabulary.toml` and corrections added in History reach the Whisper prompt from the next dictation, without a daemon restart (#51)
 
 ### Changed
 - `initial_prompt` is documented as the short style and language hint. Existing configs with a single `initial_prompt` behave exactly as before and are not rewritten (#51)
+- Without the MLX Whisper tokenizer (for example with faster-whisper), prompt tokens are counted as UTF-8 bytes, an upper bound, so the budget is never exceeded (#51)
 
 ## [0.11.6] - 2026-10-31
 
