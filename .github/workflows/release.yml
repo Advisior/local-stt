@@ -19,9 +19,15 @@ env:
   RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
 
 jobs:
+  # Both assets are built first and published together by `publish`, so a
+  # release never shows the app without the standalone runtime (#63):
+  # install.sh would fall back to git/uv, which the Macs the runtime is for
+  # do not have. If either build fails, nothing is uploaded.
   build-app:
     # Apple Silicon runner: the app is arm64 only and needs the Swift toolchain.
     runs-on: macos-15
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -49,15 +55,20 @@ jobs:
             shasum -a 256 "$zip" > "$zip.sha256"
           done
 
-      - name: Attach zip and checksum to release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$RELEASE_TAG" dist/Local-STT-*.zip dist/Local-STT-*.zip.sha256 --clobber
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-app
+          path: |
+            dist/Local-STT-*.zip
+            dist/Local-STT-*.zip.sha256
+          if-no-files-found: error
+          retention-days: 1
 
   build-runtime:
-    # Standalone Python runtime for install.sh (#63). A separate job: when it
-    # fails, the app zip still ships and install.sh falls back to uv/python3.
+    # Standalone Python runtime for install.sh (#63).
     runs-on: macos-15
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -81,7 +92,45 @@ jobs:
       - name: Build standalone runtime
         run: bash scripts/build-runtime.sh
 
-      - name: Attach runtime and checksum to release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-runtime
+          path: |
+            dist/Local-STT-runtime-*.tar.gz
+            dist/Local-STT-runtime-*.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    # Runs only when both builds succeeded.
+    needs: [build-app, build-runtime]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+
+      - name: Verify checksums before publishing
+        working-directory: dist
+        run: |
+          shopt -s nullglob
+          sums=(*.sha256)
+          if [[ ${#sums[@]} -ne 2 ]]; then
+            echo "Expected the app and runtime checksums, found: ${sums[*]}" >&2
+            exit 1
+          fi
+          sha256sum -c "${sums[@]}"
+
+      # Runtime first: once the app zip is visible, the runtime is too.
+      - name: Attach runtime, app and checksums to release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$RELEASE_TAG" dist/Local-STT-runtime-*.tar.gz dist/Local-STT-runtime-*.tar.gz.sha256 --clobber
+        run: |
+          gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --clobber \
+            dist/Local-STT-runtime-*.tar.gz dist/Local-STT-runtime-*.tar.gz.sha256
+          gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --clobber \
+            dist/Local-STT-v*.zip dist/Local-STT-v*.zip.sha256
