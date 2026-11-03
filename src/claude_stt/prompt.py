@@ -4,8 +4,8 @@ Whisper keeps only the last 223 prompt tokens and silently cuts the start,
 which is where the style and language hint sits. The prompt is therefore
 built here: hint first, then vocabulary terms in order, as many as fit.
 Terms that do not fit are dropped and logged instead of cutting the hint.
-The daemon refreshes the prompt before each transcription, so edits to
-vocabulary.toml and new corrections apply without a restart, and writes
+The daemon refreshes the prompt before each transcription, so edits to the
+vocabulary and new corrections apply without a restart, and writes
 prompt_status.json for the Settings warning.
 """
 
@@ -180,7 +180,7 @@ class PromptRefresher:
         if result.hint_over_budget:
             logger.warning(
                 "initial_prompt is longer than Whisper's %d-token prompt; Whisper will cut "
-                "its beginning. Move proper nouns to vocabulary.toml.",
+                "its beginning. Move proper nouns to 'vocabulary'.",
                 self._budget,
             )
         if result.dropped:

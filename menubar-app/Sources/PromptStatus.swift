@@ -22,7 +22,7 @@ struct PromptStatus: Decodable {
     /// Warning for Settings, or nil when everything fit.
     var warning: String? {
         if hintOverBudget {
-            return "This prompt is longer than Whisper's \(budget) tokens, so Whisper cuts its beginning. Move proper nouns to vocabulary.toml."
+            return "This prompt is longer than Whisper's \(budget) tokens, so Whisper cuts its beginning. Move proper nouns to the vocabulary list in config.toml."
         }
         if !dropped.isEmpty {
             return "\(dropped.count) vocabulary term(s) did not fit Whisper's \(budget)-token prompt and were left out: \(dropped.joined(separator: ", "))"
