@@ -7,20 +7,22 @@ extension ConfigManager {
     static let preservedKeys: Set<String> = ["vocabulary", "vocabulary_from_corrections"]
 
     /// Lines of `preservedKeys` in the `[claude-stt]` section of `content`,
-    /// verbatim and in file order. A multi-line array is copied up to its
-    /// closing bracket.
+    /// verbatim and in file order. A value spanning lines (array, multi-line
+    /// string) is copied up to its end. Continuation lines of other keys'
+    /// values are never read as headers or keys.
     static func preservedLines(in content: String) -> [String] {
         var result: [String] = []
         var section = ""
-        var depth = 0  // unclosed brackets of the value being copied
+        var scanner = PreservedValueScanner()
+        var copying = false
 
         for line in content.components(separatedBy: .newlines) {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if depth > 0 {
-                result.append(line)
-                depth = max(0, depth + bracketBalance(trimmed))
+            if scanner.isOpen {
+                if copying { result.append(line) }
+                scanner.scan(line)
                 continue
             }
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed.hasPrefix("[") {
                 // Outside a value, a line starting with "[" is a table header.
                 section = trimmed.dropFirst()
@@ -28,42 +30,65 @@ extension ConfigManager {
                     .trimmingCharacters(in: .whitespaces)
                 continue
             }
-            guard section == "claude-stt", !trimmed.hasPrefix("#"),
-                  let eq = trimmed.firstIndex(of: "=") else { continue }
+            guard !trimmed.hasPrefix("#"), let eq = trimmed.firstIndex(of: "=") else { continue }
             let key = trimmed[..<eq]
                 .trimmingCharacters(in: .whitespaces)
                 .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
-            guard preservedKeys.contains(key) else { continue }
-            result.append(line)
-            depth = max(0, bracketBalance(String(trimmed[trimmed.index(after: eq)...])))
+            copying = section == "claude-stt" && preservedKeys.contains(key)
+            if copying { result.append(line) }
+            scanner.scan(String(trimmed[trimmed.index(after: eq)...]))
         }
         return result
     }
+}
 
-    /// Count of "[" minus "]" outside strings and comments.
-    private static func bracketBalance(_ text: String) -> Int {
-        var balance = 0
-        var quote: Character?
-        var escaped = false
-        for c in text {
-            if let open = quote {
-                if escaped {
-                    escaped = false
-                } else if c == "\\" && open == "\"" {
-                    escaped = true
-                } else if c == open {
-                    quote = nil
+/// Tracks whether a TOML value is still open at the end of a line: inside an
+/// array or inline table, or inside a multi-line string. The state carries
+/// over between lines; one-line strings and comments are skipped, so quotes,
+/// brackets and "#" inside them change nothing.
+struct PreservedValueScanner {
+    private var multilineQuote: Character?  // " or ' while inside """ or '''
+    private var depth = 0
+
+    var isOpen: Bool { depth > 0 || multilineQuote != nil }
+
+    mutating func scan(_ line: String) {
+        let chars = Array(line)
+        func isTriple(_ quote: Character, at index: Int) -> Bool {
+            index + 2 < chars.count
+                && chars[index] == quote && chars[index + 1] == quote && chars[index + 2] == quote
+        }
+        var i = 0
+        while i < chars.count {
+            let c = chars[i]
+            if let quote = multilineQuote {
+                if quote == "\"" && c == "\\" {
+                    i += 2
+                } else if isTriple(quote, at: i) {
+                    multilineQuote = nil
+                    i += 3
+                } else {
+                    i += 1
                 }
                 continue
             }
-            switch c {
-            case "\"", "'": quote = c
-            case "#": return balance
-            case "[": balance += 1
-            case "]": balance -= 1
-            default: break
+            if c == "#" { return }
+            if c == "\"" || c == "'" {
+                if isTriple(c, at: i) {
+                    multilineQuote = c
+                    i += 3
+                    continue
+                }
+                i += 1
+                while i < chars.count && chars[i] != c {
+                    i += (c == "\"" && chars[i] == "\\") ? 2 : 1
+                }
+                i += 1
+                continue
             }
+            if c == "[" || c == "{" { depth += 1 }
+            if c == "]" || c == "}" { depth = max(0, depth - 1) }
+            i += 1
         }
-        return balance
     }
 }

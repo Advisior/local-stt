@@ -1,4 +1,5 @@
 import ServiceManagement
+import Combine
 import SwiftUI
 
 struct SettingsView: View {
@@ -228,6 +229,8 @@ private struct TranscriptionTab: View {
 
     private let maxVocabularyChars = 1000
     @State private var promptStatus: PromptStatus?
+    /// The daemon rewrites prompt_status.json after a dictation; re-read it while open.
+    private let statusTimer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
     private var charsUsed: Int { config.initialPrompt.count }
     private var charsRemaining: Int { max(0, maxVocabularyChars - charsUsed) }
@@ -305,6 +308,7 @@ private struct TranscriptionTab: View {
         }
         .formStyle(.grouped)
         .onAppear { promptStatus = PromptStatus.load() }
+        .onReceive(statusTimer) { _ in promptStatus = PromptStatus.load() }
     }
 }
 
