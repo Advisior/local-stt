@@ -22,7 +22,8 @@ jobs:
   # Both assets are built first and published together by `publish`, so a
   # release never shows the app without the standalone runtime (#63):
   # install.sh would fall back to git/uv, which the Macs the runtime is for
-  # do not have. If either build fails, nothing is uploaded.
+  # do not have. If either build fails, nothing is uploaded, and the release
+  # is only made public (out of draft) once every asset is attached.
   build-app:
     # Apple Silicon runner: the app is arm64 only and needs the Swift toolchain.
     runs-on: macos-15
@@ -102,35 +103,28 @@ jobs:
           retention-days: 1
 
   publish:
-    # Runs only when both builds succeeded.
+    # Runs only when both builds succeeded. The release stays a draft (not
+    # visible to releases/latest, which install.sh uses) until the runtime,
+    # the app zip and both checksums are attached; see publish-release.sh.
     needs: [build-app, build-runtime]
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    concurrency:
+      group: publish-${{ github.event.inputs.tag || github.ref_name }}
+      cancel-in-progress: false
     steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
       - uses: actions/download-artifact@v4
         with:
           pattern: release-*
           path: dist
           merge-multiple: true
 
-      - name: Verify checksums before publishing
-        working-directory: dist
-        run: |
-          shopt -s nullglob
-          sums=(*.sha256)
-          if [[ ${#sums[@]} -ne 2 ]]; then
-            echo "Expected the app and runtime checksums, found: ${sums[*]}" >&2
-            exit 1
-          fi
-          sha256sum -c "${sums[@]}"
-
-      # Runtime first: once the app zip is visible, the runtime is too.
-      - name: Attach runtime, app and checksums to release
+      - name: Publish release with all assets
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --clobber \
-            dist/Local-STT-runtime-*.tar.gz dist/Local-STT-runtime-*.tar.gz.sha256
-          gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --clobber \
-            dist/Local-STT-v*.zip dist/Local-STT-v*.zip.sha256
+        run: bash scripts/publish-release.sh "$RELEASE_TAG" dist CHANGELOG.md

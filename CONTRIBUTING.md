@@ -71,9 +71,9 @@ When shipping a new version:
 
 2. **Update CHANGELOG.md** with the new version and changes
 
-3. **Build the app:** `bash scripts/build-app.sh`
+3. **Push the tag** `vX.Y.Z`. The Release workflow builds the app zip and the standalone Python runtime, creates a draft release if none exists (notes: the CHANGELOG section), attaches both with their `.sha256` files and only then publishes the release. If either build fails, the release stays a draft or is not created, so `install.sh` keeps using the previous release. A release drafted beforehand keeps its notes; one already published in the web UI is turned back into a draft until all assets are attached.
 
-4. **Create a GitHub Release** with the built ZIP from `dist/`
+To build locally instead: `bash scripts/build-app.sh` and, on an Apple Silicon Mac, `bash scripts/build-runtime.sh`.
 
 ### Version Strategy
 
