@@ -114,8 +114,8 @@ class EffectivePromptTests(unittest.TestCase):
         self.assertEqual(count_tokens(""), 0)
 
 
-class VocabularyFileTests(unittest.TestCase):
-    """Vocabulary lives in vocabulary.toml, which the menu bar app never rewrites."""
+class VocabularyConfigTests(unittest.TestCase):
+    """vocabulary and vocabulary_from_corrections live in [claude-stt] of config.toml."""
 
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -126,11 +126,11 @@ class VocabularyFileTests(unittest.TestCase):
         self.addCleanup(env.stop)
         os.environ.pop("CLAUDE_PLUGIN_ROOT", None)
 
-    def _write(self, name: str, text: str) -> None:
-        (self.config_dir / name).write_text(text)
+    def _write(self, text: str) -> None:
+        (self.config_dir / "config.toml").write_text(text)
 
     def test_old_config_with_a_single_initial_prompt_loads_as_the_hint(self):
-        self._write("config.toml", '[claude-stt]\ninitial_prompt = "Advisior, Cotedo"\n')
+        self._write('[claude-stt]\ninitial_prompt = "Advisior, Cotedo"\n')
         config = Config.load()
         self.assertEqual(config.initial_prompt, "Advisior, Cotedo")
         self.assertEqual(config.vocabulary, [])
@@ -138,51 +138,53 @@ class VocabularyFileTests(unittest.TestCase):
 
     def test_loading_an_old_config_does_not_rewrite_or_create_files(self):
         original = '[claude-stt]\ninitial_prompt = "Advisior"\n\n[corrections]\n"a" = "b"\n'
-        self._write("config.toml", original)
+        self._write(original)
         Config.load()
         self.assertEqual((self.config_dir / "config.toml").read_text(), original)
         self.assertEqual(sorted(p.name for p in self.config_dir.iterdir()), ["config.toml"])
 
-    def test_vocabulary_file_is_loaded(self):
-        self._write("config.toml", '[claude-stt]\ninitial_prompt = "Deutsch."\n')
+    def test_vocabulary_keys_are_loaded(self):
         self._write(
-            "vocabulary.toml", 'terms = ["Advisior", "Cotedo"]\nfrom_corrections = true\n'
+            '[claude-stt]\ninitial_prompt = "Deutsch."\n'
+            'vocabulary = [\n    "Advisior",\n    "Cotedo",\n]\n'
+            "vocabulary_from_corrections = true\n"
         )
         config = Config.load()
         self.assertEqual(config.vocabulary, ["Advisior", "Cotedo"])
         self.assertTrue(config.vocabulary_from_corrections)
 
-    def test_vocabulary_file_is_used_without_a_config_toml(self):
-        self._write("vocabulary.toml", 'terms = ["Advisior"]\n')
-        self.assertEqual(Config.load().vocabulary, ["Advisior"])
-
-    def test_vocabulary_survives_an_app_style_rewrite_of_config_toml(self):
-        self._write("vocabulary.toml", 'terms = ["Advisior"]\nfrom_corrections = true\n')
-        self._write("config.toml", '[claude-stt]\nhotkey = "f1"\n')
-        # The current menu bar app rewrites config.toml from scratch on save.
-        self._write("config.toml", '[claude-stt]\nhotkey = "f2"\n\n[corrections]\n"x" = "y"\n')
+    def test_vocabulary_keys_round_trip_through_save(self):
+        Config(
+            initial_prompt="Deutsch.", vocabulary=["Advisior"], vocabulary_from_corrections=True
+        ).save()
         config = Config.load()
+        self.assertEqual(config.initial_prompt, "Deutsch.")
         self.assertEqual(config.vocabulary, ["Advisior"])
         self.assertTrue(config.vocabulary_from_corrections)
 
-    def test_config_save_never_touches_the_vocabulary_file(self):
-        original = '# my terms\nterms = ["Advisior"]\n'
-        self._write("vocabulary.toml", original)
-        Config.load().save()
-        self.assertEqual((self.config_dir / "vocabulary.toml").read_text(), original)
+    def test_save_omits_the_vocabulary_keys_when_unused(self):
+        Config().save()
         self.assertNotIn("vocabulary", (self.config_dir / "config.toml").read_text())
 
     def test_reload_vocabulary_picks_up_edits(self):
+        self._write('[claude-stt]\nhotkey = "f1"\n')
         config = Config.load()
-        self._write("vocabulary.toml", 'terms = ["Cotedo"]\n')
+        self._write('[claude-stt]\nvocabulary = ["Cotedo"]\nvocabulary_from_corrections = true\n')
         config.reload_vocabulary()
         self.assertEqual(config.vocabulary, ["Cotedo"])
+        self.assertTrue(config.vocabulary_from_corrections)
 
-    def test_broken_vocabulary_file_is_ignored_with_a_warning(self):
-        self._write("vocabulary.toml", "terms = [unclosed\n")
+    def test_reload_vocabulary_keeps_values_when_the_file_is_unreadable(self):
+        self._write('[claude-stt]\nvocabulary = ["Advisior"]\n')
+        config = Config.load()
+        self._write("[claude-stt\nbroken")
+        config.reload_vocabulary()
+        self.assertEqual(config.vocabulary, ["Advisior"])
+
+    def test_non_bool_vocabulary_from_corrections_is_off_with_a_warning(self):
         with self.assertLogs("claude_stt.config", level="WARNING"):
-            config = Config.load()
-        self.assertEqual(config.vocabulary, [])
+            config = Config(vocabulary_from_corrections="yes").validate()
+        self.assertFalse(config.vocabulary_from_corrections)
 
     def test_vocabulary_given_as_a_comma_separated_string_is_split(self):
         config = Config(vocabulary="Advisior, Cotedo ,,KiCo").validate()
@@ -250,9 +252,8 @@ class PromptRefresherTests(unittest.TestCase):
 
     def test_new_correction_target_reaches_the_engine_without_a_restart(self):
         (self.config_dir / "config.toml").write_text(
-            '[claude-stt]\ninitial_prompt = "Deutsch."\n'
+            '[claude-stt]\ninitial_prompt = "Deutsch."\nvocabulary_from_corrections = true\n'
         )
-        (self.config_dir / "vocabulary.toml").write_text("from_corrections = true\n")
         config = Config.load()
         engine = FakeEngine()
         refresher = self._refresher(config)
@@ -261,18 +262,20 @@ class PromptRefresherTests(unittest.TestCase):
 
         # The History view adds a correction while the daemon runs.
         (self.config_dir / "config.toml").write_text(
-            '[claude-stt]\ninitial_prompt = "Deutsch."\n\n[corrections]\n"Brot" = "Prod"\n'
+            '[claude-stt]\ninitial_prompt = "Deutsch."\nvocabulary_from_corrections = true\n'
+            '\n[corrections]\n"Brot" = "Prod"\n'
         )
         refresher.refresh(engine)
         self.assertEqual(engine.initial_prompt, "Deutsch. Prod")
 
-    def test_vocabulary_file_edits_reach_the_engine_without_a_restart(self):
+    def test_vocabulary_edits_reach_the_engine_without_a_restart(self):
+        (self.config_dir / "config.toml").write_text('[claude-stt]\nhotkey = "f1"\n')
         config = Config.load()
         engine = FakeEngine()
         refresher = self._refresher(config)
         refresher.refresh(engine)
         self.assertIsNone(engine.initial_prompt)
-        (self.config_dir / "vocabulary.toml").write_text('terms = ["Advisior"]\n')
+        (self.config_dir / "config.toml").write_text('[claude-stt]\nvocabulary = ["Advisior"]\n')
         refresher.refresh(engine)
         self.assertEqual(engine.initial_prompt, "Advisior")
 
@@ -331,8 +334,9 @@ class DaemonPromptTests(unittest.TestCase):
         from claude_stt import daemon_service
         from claude_stt.daemon_service import STTDaemon
 
-        (self.config_dir / "config.toml").write_text('[claude-stt]\ninitial_prompt = "Deutsch."\n')
-        (self.config_dir / "vocabulary.toml").write_text("from_corrections = true\n")
+        (self.config_dir / "config.toml").write_text(
+            '[claude-stt]\ninitial_prompt = "Deutsch."\nvocabulary_from_corrections = true\n'
+        )
         d = STTDaemon(Config.load())
         d._overlay_send = mock.Mock()
         seen = []
@@ -346,7 +350,8 @@ class DaemonPromptTests(unittest.TestCase):
 
         d._engine = Engine()
         (self.config_dir / "config.toml").write_text(
-            '[claude-stt]\ninitial_prompt = "Deutsch."\n\n[corrections]\n"Brot" = "Prod"\n'
+            '[claude-stt]\ninitial_prompt = "Deutsch."\nvocabulary_from_corrections = true\n'
+            '\n[corrections]\n"Brot" = "Prod"\n'
         )
         audio = daemon_service.np.ones(16000, dtype="float32") * 0.1
         with mock.patch.object(daemon_service, "output_text", return_value=None), \
