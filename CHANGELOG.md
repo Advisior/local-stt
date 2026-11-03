@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-03
+
+### Added
+- Releases publish `Local-STT-runtime-vX.Y.Z-macos-arm64.tar.gz` and its `.sha256`: a relocatable CPython 3.12 (python-build-standalone, pinned version and SHA-256) with Local-STT and its `mlx` and `macos` dependencies preinstalled from hash-locked requirements, built for macOS 13 or later on Apple Silicon. `scripts/build-runtime.sh` builds it, `scripts/lock-runtime.sh` regenerates the locks (#63)
+- `install.sh` installs that runtime to `~/Library/Application Support/Local-STT/venv`, so the default remote install needs neither `git` nor `python3` nor `uv`. The runtime is only used after its SHA-256 matches and it reports the release version; otherwise the script prints the reason and sets up Python with `uv`/`python3` from a source checkout as before. `--from-source`, `--build-only` and runs from a local checkout keep that source setup (#63)
+
 ## [0.11.6] - 2026-10-31
 
 ### Security
