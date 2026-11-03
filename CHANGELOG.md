@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-03
+
+### Added
+- New `vocabulary` list in `[claude-stt]`. The daemon builds the Whisper prompt from the `initial_prompt` hint followed by as many vocabulary terms as fit Whisper's 223-token prompt, so the hint is no longer cut off. Terms that do not fit are dropped from the end and listed as a warning in `daemon.log`; a hint that alone exceeds the budget is also logged (#51)
+- New opt-in `vocabulary_from_corrections` (default `false`) appends the right-hand side of each `[corrections]` entry to the vocabulary, after the `vocabulary` terms (#51)
+
+### Changed
+- `initial_prompt` is documented as the short style and language hint. Existing configs with a single `initial_prompt` behave exactly as before and are not rewritten (#51)
+
 ## [0.11.6] - 2026-10-31
 
 ### Security
