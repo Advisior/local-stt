@@ -320,6 +320,43 @@ class PromptRefresherTests(unittest.TestCase):
         self.assertFalse((self.config_dir / "prompt_status.json").exists())
 
 
+class EnvPromptTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        env = mock.patch.dict(
+            os.environ,
+            {"LOCAL_STT_CONFIG_DIR": tmp.name, "CLAUDE_STT_INITIAL_PROMPT": "Aus der Umgebung."},
+        )
+        env.start()
+        self.addCleanup(env.stop)
+
+    def _transcribe_kwargs(self, engine):
+        engine.load_model = lambda: True
+        engine._model = mock.Mock()
+        engine._model.transcribe.return_value = ([], None)
+        engine.transcribe(__import__("numpy").zeros(16000, dtype="float32"))
+        return engine._model.transcribe.call_args.kwargs
+
+    def test_env_prompt_survives_a_refresh_when_the_config_has_none(self):
+        from claude_stt.engines.whisper import WhisperEngine
+        from claude_stt.prompt import PromptRefresher
+
+        config = Config(engine="whisper")
+        engine = build_engine(config)
+        PromptRefresher(config, count_tokens=words).refresh(engine, reload=False)
+        self.assertIsInstance(engine, WhisperEngine)
+        self.assertEqual(self._transcribe_kwargs(engine)["initial_prompt"], "Aus der Umgebung.")
+
+    def test_config_prompt_still_wins_over_the_env_prompt(self):
+        from claude_stt.prompt import PromptRefresher
+
+        config = Config(engine="whisper", initial_prompt="Deutsch.")
+        engine = build_engine(config)
+        PromptRefresher(config, count_tokens=words).refresh(engine, reload=False)
+        self.assertEqual(self._transcribe_kwargs(engine)["initial_prompt"], "Deutsch.")
+
+
 class DaemonPromptTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
