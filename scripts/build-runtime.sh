@@ -141,7 +141,8 @@ mv "$moved_parent/venv" "$RUNTIME"
 find "$RUNTIME" -name '.DS_Store' -delete
 ASSET_PATH="$DIST_DIR/$ASSET_NAME"
 rm -f "$ASSET_PATH" "$ASSET_PATH.sha256"
-tar -C "$STAGE_DIR" -czf "$ASSET_PATH" venv
+# COPYFILE_DISABLE keeps macOS AppleDouble files (._*) out of the archive.
+COPYFILE_DISABLE=1 tar -C "$STAGE_DIR" -czf "$ASSET_PATH" venv
 size="$(wc -c < "$ASSET_PATH" | tr -d ' ')"
 if (( size > MAX_ASSET_BYTES )); then
     die "$ASSET_NAME is $size bytes, above the GitHub release asset limit"
