@@ -254,6 +254,9 @@ class ConfigManager: ObservableObject {
         if !initialPrompt.isEmpty {
             lines.append("initial_prompt = \"\(escape(initialPrompt))\"")
         }
+        if let onDisk = try? String(contentsOf: configURL, encoding: .utf8) {
+            lines.append(contentsOf: Self.preservedLines(in: onDisk))  // #51
+        }
 
         if !corrections.isEmpty {
             lines.append("")

@@ -19,9 +19,16 @@ env:
   RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
 
 jobs:
+  # Both assets are built first and published together by `publish`, so a
+  # release never shows the app without the standalone runtime (#63):
+  # install.sh would fall back to git/uv, which the Macs the runtime is for
+  # do not have. If either build fails, nothing is uploaded, and the release
+  # is only made public (out of draft) once every asset is attached.
   build-app:
     # Apple Silicon runner: the app is arm64 only and needs the Swift toolchain.
     runs-on: macos-15
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -49,7 +56,75 @@ jobs:
             shasum -a 256 "$zip" > "$zip.sha256"
           done
 
-      - name: Attach zip and checksum to release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-app
+          path: |
+            dist/Local-STT-*.zip
+            dist/Local-STT-*.zip.sha256
+          if-no-files-found: error
+          retention-days: 1
+
+  build-runtime:
+    # Standalone Python runtime for install.sh (#63).
+    runs-on: macos-15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Check version consistency
+        run: bash scripts/check-versions.sh
+
+      - name: Verify tag matches project version
+        run: |
+          version=$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\(.*\)"/\1/p' pyproject.toml | head -1)
+          if [[ "$RELEASE_TAG" != "v$version" ]]; then
+            echo "Tag $RELEASE_TAG does not match pyproject version $version" >&2
+            exit 1
+          fi
+
+      # Downloads the pinned CPython and refuses it unless its SHA-256 matches
+      # scripts/runtime/python-build-standalone.env; dependencies are
+      # installed from hash-locked requirements only. Writes the .sha256 that
+      # install.sh checks.
+      - name: Build standalone runtime
+        run: bash scripts/build-runtime.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-runtime
+          path: |
+            dist/Local-STT-runtime-*.tar.gz
+            dist/Local-STT-runtime-*.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    # Runs only when both builds succeeded. The release stays a draft (not
+    # visible to releases/latest, which install.sh uses) until the runtime,
+    # the app zip and both checksums are attached; see publish-release.sh.
+    needs: [build-app, build-runtime]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: publish-${{ github.event.inputs.tag || github.ref_name }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+
+      - name: Publish release with all assets
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$RELEASE_TAG" dist/Local-STT-*.zip dist/Local-STT-*.zip.sha256 --clobber
+        run: bash scripts/publish-release.sh "$RELEASE_TAG" dist CHANGELOG.md

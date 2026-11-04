@@ -54,6 +54,7 @@ Transcription runs in a dedicated worker thread to avoid blocking the hotkey lis
 - `commands/` - Slash commands (setup, start, stop, status, config) as markdown files
 - `hooks/hooks.json` - Claude Code plugin hooks
 - `scripts/setup.py` - Bootstrap script that handles venv creation, dependency install, model download
+- `scripts/build-runtime.sh` - Builds the standalone Python runtime release asset that `install.sh` prefers (macOS arm64; pins in `scripts/runtime/`, regenerate the locks with `scripts/lock-runtime.sh` after dependency changes)
 - `.claude-plugin/plugin.json` - Plugin metadata
 
 ## Version Bumps

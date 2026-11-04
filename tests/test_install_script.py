@@ -6,11 +6,13 @@ under /Applications and only log it.
 """
 
 import hashlib
+import io
 import plistlib
 import shutil
 import stat
 import subprocess
 import sys
+import tarfile
 import tempfile
 import textwrap
 import unittest
@@ -26,7 +28,8 @@ _ZIP_URL = (
 # Real tools the installer needs besides the stubbed ones. swift, python3 and
 # brew are deliberately not linked, so a test controls whether they exist.
 _REAL_TOOLS = (
-    "bash", "cat", "dirname", "grep", "head", "mkdir", "mktemp", "sed", "shasum", "tail", "tr",
+    "bash", "cat", "dirname", "grep", "gzip", "head", "mkdir", "mktemp", "mv", "sed", "shasum",
+    "tail", "tar", "tr",
 )
 _ZIP_BYTES = b"zip\n"  # what the curl stub writes for the zip
 
@@ -52,6 +55,20 @@ _STUBS = {
             if [[ "$1" == "-o" ]]; then out="$2"; shift; else url="$1"; fi
             shift
         done
+        if [[ "$url" == *Local-STT-runtime-*.tar.gz.sha256 ]]; then
+            [[ "${FAKE_RUNTIME_SHA_DOWNLOAD:-ok}" == "ok" ]] || exit 22
+            printf '%s  runtime.tar.gz\n' "$FAKE_RUNTIME_SHA256" > "$out"
+            exit 0
+        fi
+        if [[ "$url" == *Local-STT-runtime-*.tar.gz ]]; then
+            # Default 404: releases before #63 have no runtime asset.
+            case "${FAKE_RUNTIME:-404}" in
+                ok) cp "$FAKE_RUNTIME_TARBALL" "$out"; printf 200 ;;
+                404) printf 404; exit 22 ;;
+                network) printf 000; exit 6 ;;
+            esac
+            exit 0
+        fi
         if [[ "$url" == *.sha256 ]]; then
             [[ "${FAKE_SHA_DOWNLOAD:-ok}" == "ok" ]] || exit 22
             printf '%s  Local-STT.zip\n' "$FAKE_SHA256" > "$out"
@@ -108,6 +125,28 @@ echo "BUILD $(pwd)" >> "$STUB_LOG"
 mkdir -p dist/Local-STT.app/Contents/MacOS
 """
 
+# The python of the fake standalone runtime: answers the version check.
+_RUNTIME_PYTHON = """#!/bin/bash
+echo "runtime-python $*" >> "$STUB_LOG"
+[[ -z "${FAKE_RUNTIME_BROKEN:-}" ]] || exit 1
+echo "${FAKE_RUNTIME_REPORTS:-$FAKE_VERSION}"
+"""
+_RUNTIME_URL = (
+    f"https://github.com/Advisior/local-stt/releases/download/{_TAG}"
+    f"/Local-STT-runtime-{_TAG}-macos-arm64.tar.gz"
+)
+
+
+def _make_tarball(path: Path, files: dict) -> None:
+    """files maps archive names to (bytes, mode)."""
+    with tarfile.open(path, "w:gz") as tar:
+        for name, (data, mode) in files.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            info.mode = mode
+            tar.addfile(info, io.BytesIO(data))
+
+
 # Stand-in for macOS plutil on Linux CI; only the call install.sh makes.
 _PLUTIL_STUB = f"""#!{sys.executable}
 import plistlib, sys
@@ -154,6 +193,9 @@ class InstallScriptTests(unittest.TestCase):
         self.app_src = self.tmp / "release" / "Local-STT.app"
         self.make_release_app()
 
+        self.runtime_tarball = self.tmp / "runtime.tar.gz"
+        self.make_runtime()
+
         self.env = {
             "PATH": str(self.bin),
             "HOME": str(self.tmp / "home"),
@@ -164,7 +206,9 @@ class InstallScriptTests(unittest.TestCase):
             "FAKE_BUILD_SCRIPT": str(self.build_script),
             "FAKE_SHA256": hashlib.sha256(_ZIP_BYTES).hexdigest(),
             "FAKE_LATEST_LOCATION": f"https://github.com/Advisior/local-stt/releases/tag/{_TAG}",
+            "FAKE_RUNTIME_TARBALL": str(self.runtime_tarball),
         }
+        self.env["FAKE_RUNTIME_SHA256"] = self.runtime_sha()
 
     # -- helpers ---------------------------------------------------------
 
@@ -186,6 +230,19 @@ class InstallScriptTests(unittest.TestCase):
 
     def remove_swift(self):
         (self.bin / "swift").unlink()
+
+    def remove_tools(self, *names):
+        for name in names:
+            (self.bin / name).unlink()
+
+    def make_runtime(self, files=None):
+        if files is None:
+            files = {"venv/bin/python": (_RUNTIME_PYTHON.encode(), 0o755),
+                     "venv/lib/python3.12/site-packages/claude_stt/__init__.py": (b"", 0o644)}
+        _make_tarball(self.runtime_tarball, files)
+
+    def runtime_sha(self):
+        return hashlib.sha256(self.runtime_tarball.read_bytes()).hexdigest()
 
     def run_remote(self, *args, **env):
         """Simulates `curl ... | bash`: the script arrives on stdin."""
@@ -236,6 +293,16 @@ class InstallScriptTests(unittest.TestCase):
 
     def leftover_download_dirs(self):
         return list(self.tmpdir.glob("local-stt-install.*"))
+
+    def runtime_reason_lines(self, result):
+        return [line for line in result.stdout.splitlines()
+                if line.startswith("Standalone runtime not used:")]
+
+    def assert_python_env_from_uv(self, result):
+        self.assert_ok(result)
+        self.assertTrue(self.logged("uv venv"), self.stub_log())
+        self.assertEqual(self.logged("runtime-python"), [])
+        self.assertEqual(list(self.prefix.glob(".runtime.*")), [])
 
     # -- AC-1 ------------------------------------------------------------
 
@@ -442,6 +509,131 @@ class InstallScriptTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertEqual(len(self.logged("ditto")), 1)
         self.assertEqual(self.leftover_download_dirs(), [])
+
+
+    # -- #63 standalone runtime -----------------------------------------
+
+    def test_rt1_given_runtime_asset_when_remote_install_then_needs_no_git_python_or_uv(self):
+        self.remove_tools("git", "uv", "swift")
+        result = self.run_remote(FAKE_RUNTIME="ok")
+        self.assert_ok(result)
+        self.assertIn("Using standalone Python runtime v1.2.3.", result.stdout)
+        self.assertTrue(any(line.endswith(_RUNTIME_URL) for line in self.logged("curl")),
+                        self.stub_log())
+        self.assertTrue(any(line.endswith(_RUNTIME_URL + ".sha256")
+                            for line in self.logged("curl")))
+        python = self.prefix / "venv" / "bin" / "python"
+        self.assertTrue(python.is_file())
+        self.assertEqual(self.logged("git"), [])
+        self.assertEqual(self.logged("uv"), [])
+        self.assertEqual(self.logged("runtime-python"),
+                         ["runtime-python -I -c import claude_stt; print(claude_stt.__version__)"])
+        self.assertIn("/unpacked/Local-STT.app /Applications/Local-STT.app",
+                      self.logged("INSTALL")[0])
+        self.assertEqual(self.leftover_download_dirs(), [])
+        self.assertEqual(list(self.prefix.glob(".runtime.*")), [])
+
+    def test_rt1_given_previous_venv_when_runtime_installs_then_replaces_it(self):
+        old = self.prefix / "venv"
+        (old / "bin").mkdir(parents=True)
+        (old / "old-marker").write_text("x")
+        result = self.run_remote(FAKE_RUNTIME="ok")
+        self.assert_ok(result)
+        self.assertFalse((old / "old-marker").exists())
+        self.assertTrue((old / "bin" / "python").is_file())
+        self.assertTrue((old / "lib" / "python3.12" / "site-packages" / "claude_stt").is_dir())
+
+    def test_rt2_given_no_runtime_asset_then_one_reason_line_and_uv_env(self):
+        result = self.run_remote(FAKE_RUNTIME="404")
+        self.assert_python_env_from_uv(result)
+        reasons = self.runtime_reason_lines(result)
+        self.assertEqual(len(reasons), 1, result.stdout)
+        self.assertIn("HTTP 404", reasons[0])
+        self.assertEqual(len(self.logged("git clone")), 1)
+
+    def test_rt2_given_network_error_then_falls_back(self):
+        result = self.run_remote(FAKE_RUNTIME="network")
+        self.assert_python_env_from_uv(result)
+        self.assertIn("network error", self.runtime_reason_lines(result)[0])
+
+    def test_rt2_given_checksum_mismatch_then_never_unpacks_or_runs_it(self):
+        result = self.run_remote(FAKE_RUNTIME="ok", FAKE_RUNTIME_SHA256="f" * 64)
+        self.assert_python_env_from_uv(result)
+        self.assertIn("does not match its published SHA-256",
+                      self.runtime_reason_lines(result)[0])
+
+    def test_rt2_given_missing_or_malformed_checksum_then_falls_back(self):
+        for env in ({"FAKE_RUNTIME_SHA_DOWNLOAD": "404"}, {"FAKE_RUNTIME_SHA256": "nope"}):
+            with self.subTest(**env):
+                self.log.write_text("")
+                result = self.run_remote(FAKE_RUNTIME="ok", **env)
+                self.assert_python_env_from_uv(result)
+                self.assertIn("SHA-256" if "FAKE_RUNTIME_SHA256" in env else "could not be"
+                              " downloaded", self.runtime_reason_lines(result)[0])
+
+    def test_rt2_given_archive_that_does_not_unpack_then_falls_back(self):
+        self.runtime_tarball.write_bytes(b"not a tarball")
+        result = self.run_remote(FAKE_RUNTIME="ok", FAKE_RUNTIME_SHA256=self.runtime_sha())
+        self.assert_python_env_from_uv(result)
+        self.assertIn("could not unpack", self.runtime_reason_lines(result)[0])
+
+    def test_rt2_given_archive_without_python_then_falls_back(self):
+        self.make_runtime({"other/bin/python": (b"#!/bin/bash\n", 0o755)})
+        result = self.run_remote(FAKE_RUNTIME="ok", FAKE_RUNTIME_SHA256=self.runtime_sha())
+        self.assert_python_env_from_uv(result)
+        self.assertIn("lacks an executable venv/bin/python", self.runtime_reason_lines(result)[0])
+
+    def test_rt3_given_runtime_that_cannot_import_local_stt_then_falls_back(self):
+        result = self.run_remote(FAKE_RUNTIME="ok", FAKE_RUNTIME_BROKEN="1")
+        self.assert_ok(result)
+        self.assertIn("could not import claude_stt", self.runtime_reason_lines(result)[0])
+        self.assertTrue(self.logged("uv venv"))
+        self.assertEqual(list(self.prefix.glob(".runtime.*")), [])
+
+    def test_rt3_given_runtime_of_another_version_then_falls_back(self):
+        result = self.run_remote(FAKE_RUNTIME="ok", FAKE_RUNTIME_REPORTS="9.9.9")
+        self.assert_ok(result)
+        self.assertIn("reports local-stt '9.9.9', expected '1.2.3'",
+                      self.runtime_reason_lines(result)[0])
+        self.assertTrue(self.logged("uv venv"))
+
+    def test_rt4_given_from_source_then_runtime_not_downloaded(self):
+        result = self.run_remote("--from-source", FAKE_RUNTIME="ok")
+        self.assert_built_from_source(result)
+        self.assertFalse(any("Local-STT-runtime" in line for line in self.logged("curl")))
+        self.assertTrue(self.logged("uv venv"))
+
+    def test_rt4_given_local_checkout_then_runtime_not_downloaded(self):
+        result = self.run_local()
+        self.assert_built_from_source(result)
+        self.assertFalse(any("Local-STT-runtime" in line for line in self.logged("curl")))
+
+    def test_rt4_given_no_resolvable_tag_then_runtime_not_downloaded(self):
+        result = self.run_remote(FAKE_LATEST_LOCATION="", FAKE_RUNTIME="ok")
+        self.assert_ok(result)
+        self.assertFalse(any("Local-STT-runtime" in line for line in self.logged("curl")))
+        self.assertIn("--branch main ", self.logged("git clone")[0])
+
+    def test_rt5_given_runtime_but_no_prebuilt_app_then_clones_tag_and_builds(self):
+        self.remove_tools("uv")
+        result = self.run_remote(FAKE_RUNTIME="ok", FAKE_DOWNLOAD="404")
+        self.assert_built_from_source(result)
+        self.assertIn(f"--branch {_TAG} ", self.logged("git clone")[0])
+        self.assertEqual(self.logged("uv"), [])
+
+    def test_rt5_given_runtime_and_no_prebuilt_app_without_swift_then_xcode_hint(self):
+        self.remove_tools("swift")
+        result = self.run_remote(FAKE_RUNTIME="ok", FAKE_DOWNLOAD="404")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("xcode-select --install", result.stderr)
+        self.assertEqual(self.logged("INSTALL"), [])
+
+    def test_rt6_given_runtime_fails_and_no_uv_python_or_brew_then_explains(self):
+        self.remove_tools("uv")
+        result = self.run_remote(FAKE_RUNTIME="404")
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(len(self.runtime_reason_lines(result)), 1)
+        self.assertIn("need either 'uv' or a system Python", result.stderr)
 
 
 if __name__ == "__main__":

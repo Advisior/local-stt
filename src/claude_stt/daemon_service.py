@@ -16,6 +16,7 @@ import numpy as np
 from . import history
 from .config import Config
 from .engine_factory import build_engine
+from .prompt import PromptRefresher
 from .formatter import fix_transcription_errors, format_paragraphs
 from .engines import STTEngine
 from .errors import EngineError, HotkeyError, RecorderError
@@ -34,17 +35,14 @@ class STTDaemon(OverlayMixin, UndoHotkeyMixin, AudioRecoveryMixin):
     """Main daemon that coordinates all STT components."""
 
     def __init__(self, config: Optional[Config] = None):
-        """Initialize the daemon.
-
-        Args:
-            config: Configuration, or load from file if None.
-        """
+        """Initialize the daemon; load the config from file if None."""
         self.config = (config or Config.load()).validate()
         self._running = False
 
         # Components
         self._recorder: Optional[AudioRecorder] = None
         self._engine: Optional[STTEngine] = None
+        self._prompt = PromptRefresher(self.config)
         self._hotkey: Optional[HotkeyListener] = None
         self._recording = False  # after _hotkey: the setter arms Esc cancel
         self._undo: Optional[UndoTracker] = None
@@ -187,6 +185,7 @@ class STTDaemon(OverlayMixin, UndoHotkeyMixin, AudioRecoveryMixin):
 
         self._logger.info("Transcribing audio (%d samples, %.1f dB)...", len(audio), db)
         try:
+            self._prompt.refresh(self._engine)  # reloads corrections and vocabulary
             text = self._engine.transcribe(audio, self.config.sample_rate)
         except Exception as exc:
             self._log_error_without_message("Transcription failed", exc)
@@ -201,7 +200,6 @@ class STTDaemon(OverlayMixin, UndoHotkeyMixin, AudioRecoveryMixin):
             self._overlay_send("CANCEL")
             return
 
-        self.config.reload_corrections()
         text = fix_transcription_errors(text, self.config.corrections)
         text = format_paragraphs(text)
 

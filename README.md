@@ -42,7 +42,7 @@ Run this in Terminal:
 curl -fsSL https://raw.githubusercontent.com/Advisior/local-stt/main/install.sh | bash
 ```
 
-This sets up a self-contained Python environment under `~/Library/Application Support/Local-STT/` from the latest release, installs the prebuilt menu bar app of that release to `/Applications`, and works with or without Homebrew/`uv` already installed; the script tells you what's missing. Pass `--from-source` (development, or when you run `install.sh` from a local checkout) to build the app yourself; that needs the Swift toolchain, and the script also builds from source when the release download fails.
+This installs the standalone Python runtime of the latest release (a relocatable CPython 3.12 with Local-STT and its dependencies preinstalled, checked against its published SHA-256) to `~/Library/Application Support/Local-STT/venv`, so `git`, `python3` and `uv` are not needed, and installs the prebuilt menu bar app of that release to `/Applications`. The runtime download is large (several hundred MB). When the release has no runtime or it fails a check, the script prints the reason and sets up the Python environment from a source checkout instead, which needs `git` and `uv` or Python 3.11-3.13 (it installs `uv` with Homebrew if needed); the script tells you what's missing. Pass `--from-source` (development, or when you run `install.sh` from a local checkout) to build the app yourself; that needs the Swift toolchain, and the script also builds from source when the release download fails.
 
 **macOS 27, source build only:** the SDK that ships with the Command Line Tools can no longer build the menu bar app (SwiftUI's `@State` became a macro whose compiler plugin comes only with Xcode). Install Xcode before building from source, see [#35](https://github.com/Advisior/local-stt/issues/35).
 
@@ -115,7 +115,9 @@ For advanced users, the config file is at `~/.config/local-stt/config.toml` and 
 | `engine` | `mlx` on Apple Silicon, else `moonshine` | STT engine: `mlx`, `whisper`, `moonshine`, `parakeet`. Moonshine is English-only; use `mlx` for other languages |
 | `whisper_model` | `large-v3-turbo` on Apple Silicon, else `medium` | Model size: `tiny`, `base`, `small`, `medium`, `large`, `large-v3`, `large-v3-turbo` |
 | `language` | auto-detect | Recognition language (2-letter code); omit the key for auto-detect (an empty string is not valid) |
-| `initial_prompt` | — | Comma-separated vocabulary terms to improve recognition |
+| `initial_prompt` | — | Short style and language hint for Whisper, placed first in the prompt |
+| `vocabulary` | `[]` | Terms Whisper should know, most important first; appended after the hint as long as they fit Whisper's prompt |
+| `vocabulary_from_corrections` | `false` | Also append the right-hand side of each `[corrections]` entry to the vocabulary |
 | `sound_effects` | `true` | Audio feedback on recording start/stop |
 | `output_mode` | `auto` | Text insertion: `auto`, `injection` (keyboard), `clipboard`, `clipboard_paste` (clipboard + Cmd+V, most compatible) |
 | `max_recording_seconds` | `300` | Maximum recording duration in seconds |
@@ -136,13 +138,21 @@ Otherwise the overlay shows "Nothing to undo" or "Too long to undo" and the log 
 
 ### Custom Vocabulary
 
-The `initial_prompt` tells Whisper which domain-specific terms you use. This dramatically improves recognition of technical words:
+Whisper reads at most 223 prompt tokens and silently cuts the *beginning* of a longer prompt. Keep `initial_prompt` (the Vocabulary field in Settings) to a short style and language hint, and list the terms in `vocabulary`:
 
 ```toml
-initial_prompt = "TypeScript, React, Kubernetes, PostgreSQL, GraphQL, WebSocket, CI/CD Pipeline, OAuth, Terraform"
+[claude-stt]
+initial_prompt = "Gesprochener Text auf Deutsch."
+vocabulary = ["TypeScript", "Kubernetes", "PostgreSQL", "GraphQL", "Terraform"]
+vocabulary_from_corrections = true   # optional, default false
+
+[corrections]
+"Brot" = "Prod"
 ```
 
-Keep it under ~500 characters. Only add terms that Whisper would otherwise misspell.
+The daemon builds the prompt as hint, then terms in order (`vocabulary` first, correction targets after it). The hint is always kept. When the terms do not fit, the remaining ones are left out, `daemon.log` lists them and Settings shows a warning under Vocabulary. Edits to `vocabulary` and new corrections apply from the next dictation, without a restart. Only add terms that Whisper would otherwise misspell. Settings does not edit `vocabulary` yet; edit `config.toml` directly. Saving from the app keeps both keys.
+
+Existing configs with a single `initial_prompt` keep working unchanged: it is used as the hint and nothing is rewritten. If it is longer than the budget, the log and Settings warn; move the proper nouns into `vocabulary`. `[corrections]` are still applied after transcription as before.
 
 ---
 
