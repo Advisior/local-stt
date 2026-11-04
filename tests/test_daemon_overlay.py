@@ -128,7 +128,7 @@ class DoneCommandTests(_Base):
         d._engine.transcribe.return_value = "eins zwei drei"
         with mock.patch.object(daemon_service, "output_text", return_value=result), \
                 self.assertLogs("claude_stt", "INFO"):
-            d._process_transcription((np.full(32000, 0.1, dtype=np.float32), None))
+            d._process_transcription((np.full(32000, 0.1, dtype=np.float32), None, False))
 
     def test_ac6_given_inserted_then_done_carries_count_and_mode(self):
         d = self._daemon()

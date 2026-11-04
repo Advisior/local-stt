@@ -395,7 +395,7 @@ class DaemonPromptTests(unittest.TestCase):
                 mock.patch.object(d, "_append_history"), \
                 mock.patch.object(daemon_service, "play_sound"), \
                 mock.patch.object(daemon_service, "get_active_window", return_value=None):
-            d._process_transcription((audio, None))
+            d._process_transcription((audio, None, False))
         self.assertEqual(seen, ["Deutsch. Prod"])
 
 

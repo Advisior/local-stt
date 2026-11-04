@@ -13,7 +13,7 @@ from typing import Optional
 
 import numpy as np
 
-from . import history
+from . import history, recordings
 from .config import Config
 from .engine_factory import build_engine
 from .prompt import PromptRefresher
@@ -50,6 +50,7 @@ class STTDaemon(OverlayMixin, UndoHotkeyMixin, AudioRecoveryMixin):
 
         # Recording state
         self._record_start_time: float = 0
+        self._private_at_start = False  # private mode was on when this recording began
         self._last_start_attempt: float = 0.0  # debounce double hotkey events
         self._last_duration_s: float = 0.0
         self._original_window: Optional[WindowInfo] = None
@@ -59,7 +60,7 @@ class STTDaemon(OverlayMixin, UndoHotkeyMixin, AudioRecoveryMixin):
         # Threading
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
-        self._transcribe_queue: "queue.Queue[Optional[tuple[object, Optional[WindowInfo]]]]" = (
+        self._transcribe_queue: "queue.Queue[Optional[tuple[object, Optional[WindowInfo], bool]]]" = (
             queue.Queue(maxsize=2)
         )
         self._transcribe_thread: Optional[threading.Thread] = None
@@ -158,7 +159,8 @@ class STTDaemon(OverlayMixin, UndoHotkeyMixin, AudioRecoveryMixin):
 
     def _process_transcription(self, item) -> None:
         """Process a single transcription item from the queue."""
-        audio, window_info = item
+        # recorded_private: private mode was on when the recording stopped.
+        audio, window_info, recorded_private = item
         if not self._engine:
             return
 
@@ -189,12 +191,14 @@ class STTDaemon(OverlayMixin, UndoHotkeyMixin, AudioRecoveryMixin):
             text = self._engine.transcribe(audio, self.config.sample_rate)
         except Exception as exc:
             self._log_error_without_message("Transcription failed", exc)
+            recordings.keep(audio, self.config, db, private=recorded_private, engine=self._engine)
             self._overlay_send("CANCEL")
             return
 
-        text = text.strip()
+        raw_text = text = text.strip()
         if not text:
             self._logger.info("No speech detected")
+            recordings.keep(audio, self.config, db, private=recorded_private, engine=self._engine)
             if self.config.sound_effects:
                 play_sound("warning")
             self._overlay_send("CANCEL")
@@ -207,7 +211,7 @@ class STTDaemon(OverlayMixin, UndoHotkeyMixin, AudioRecoveryMixin):
         # Never log transcript text: the log is not covered by private mode
         # or history deletion.
         self._logger.info("Transcribed %d words", word_count)
-        private = history.private_mode_active()
+        private = recorded_private or history.private_mode_active()
         start = self._undo.begin_insert() if self._undo else None
         inserted = output_text(text, window_info, self.config, private=private)
         if not inserted:
@@ -222,6 +226,7 @@ class STTDaemon(OverlayMixin, UndoHotkeyMixin, AudioRecoveryMixin):
             self._logger.info("Private mode on: transcription not added to history")
         else:
             self._append_history(text, self._last_duration_s, db)
+        recordings.keep(audio, self.config, db, raw_text, text, private=private, engine=self._engine)
         self._overlay_send(done)
 
     def _append_history(self, text: str, duration_s: float, db: float) -> None:
@@ -287,6 +292,7 @@ class STTDaemon(OverlayMixin, UndoHotkeyMixin, AudioRecoveryMixin):
             if self.config.mute_on_record:
                 self._mute_system_audio()
             self._record_start_time = time.time()
+            self._private_at_start = history.private_mode_active()
 
             # Capture the active window
             self._original_window = get_active_window()
@@ -336,7 +342,9 @@ class STTDaemon(OverlayMixin, UndoHotkeyMixin, AudioRecoveryMixin):
         # Transcribe outside the lock
         if audio is not None and len(audio) > 0:
             try:
-                self._transcribe_queue.put_nowait((audio, window_info))
+                self._transcribe_queue.put_nowait(
+                    (audio, window_info, self._private_at_start or history.private_mode_active())
+                )
             except queue.Full:
                 self._logger.warning("Dropping transcription; queue is full")
                 self._overlay_send("CANCEL")

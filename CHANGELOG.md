@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-11-04
+
+### Added
+- Debug recording store, off by default: with `debug_keep_recordings = N` the daemon keeps the newest N dictations that reached the engine as `recordings/<timestamp>.wav` plus a `.json` sidecar (engine, model, language, `initial_prompt` hint, the full prompt the engine received, raw and final text) in the config dir. Recordings without speech are kept too, nothing is stored in private mode (a dictation recorded while it was on, even briefly, stays private, also in the history, even if the mode ends before transcription finishes), the folder is 0700 and its files 0600, and a failed write only logs a warning (#50)
+- `scripts/asr_benchmark.py` transcribes a folder of WAVs with several engine, model, language and prompt variants and prints transcript, latency, word error rate against `<name>.ref.txt` with a word diff, and a summary per variant; `prompt=config` uses the prompt the daemon builds (hint plus vocabulary), any other prompt is passed as is without the config's vocabulary; `language` and `prompt` are rejected for Moonshine and Parakeet, which ignore them; `--json` saves all results (#50)
+
 ## [0.14.0] - 2026-11-04
 
 ### Added
