@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 struct HistoryEntry: Identifiable {
@@ -10,62 +11,35 @@ struct HistoryEntry: Identifiable {
     let db: Double
 }
 
+/// Search text shared between the toolbar search field and the list.
+final class HistorySearch: ObservableObject {
+    @Published var text = ""
+}
+
+enum HistoryFilter {
+    /// Case-insensitive substring match; an empty query keeps every entry.
+    static func filter(_ entries: [HistoryEntry], query: String) -> [HistoryEntry] {
+        guard !query.isEmpty else { return entries }
+        return entries.filter { $0.text.localizedCaseInsensitiveContains(query) }
+    }
+}
+
 struct HistoryView: View {
     @ObservedObject var config: ConfigManager
-    var onDismiss: () -> Void
+    @ObservedObject var search: HistorySearch
 
     @State private var entries: [HistoryEntry] = []
     @State private var pauseRefresh = false
-    @State private var searchText: String = ""
     private let refreshTimer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
+    private var searchText: String { search.text }
+
     private var filteredEntries: [HistoryEntry] {
-        guard !searchText.isEmpty else { return entries }
-        return entries.filter { $0.text.localizedCaseInsensitiveContains(searchText) }
+        HistoryFilter.filter(entries, query: searchText)
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header
-            HStack {
-                Text("Transcript History")
-                    .font(.headline)
-                Spacer()
-                Button("Close") { onDismiss() }
-                    .buttonStyle(.plain)
-                    .foregroundColor(.secondary)
-            }
-            .padding()
-
-            // Search
-            HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundColor(.secondary)
-                    .font(.caption)
-                TextField("Search transcriptions...", text: $searchText)
-                    .textFieldStyle(.plain)
-                    .font(.body)
-                if !searchText.isEmpty {
-                    Button(action: { searchText = "" }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.secondary)
-                            .font(.caption)
-                    }
-                    .buttonStyle(.plain)
-                    Text("\(filteredEntries.count)/\(entries.count)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-            .padding(.horizontal)
-            .padding(.vertical, 6)
-            .background(Color(NSColor.textBackgroundColor))
-            .cornerRadius(6)
-            .padding(.horizontal)
-            .padding(.bottom, 8)
-
-            Divider()
-
             if entries.isEmpty {
                 Spacer()
                 Text("No transcriptions yet.")

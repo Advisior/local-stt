@@ -22,6 +22,12 @@ claude --plugin-dir .
 
 # Lint (ruff)
 uv run ruff check src/
+
+# Menu bar app tests (Swift Testing). With only the Command Line Tools the
+# default SDK lacks the SwiftUI macro plugin and the Testing plugin is not on
+# the search path; CI (Xcode) needs neither flag.
+cd menubar-app && SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+  swift test -Xswiftc -plugin-path -Xswiftc /Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing
 ```
 
 ## Architecture

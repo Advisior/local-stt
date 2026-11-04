@@ -55,6 +55,9 @@ jobs:
       - name: Build menu bar app
         run: swift build -c release
         working-directory: menubar-app
+      - name: Test menu bar app
+        run: swift test
+        working-directory: menubar-app
       # Local machines with only the Command Line Tools cannot build the app
       # (SwiftUI macro plugin missing), so CI hands out a testable bundle.
       - name: Package app bundle

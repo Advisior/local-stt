@@ -2,7 +2,8 @@
 # Regenerate the hash-locked requirements of the standalone runtime (#63).
 #
 # The runtime is built on a macOS 15 runner but must run on macOS 13 (the
-# menu bar app's minimum), so the lock is resolved for macOS 13 on arm64.
+# daemon's minimum; the menu bar app needs 14), so the lock is resolved for
+# macOS 13 on arm64.
 # EXCLUDE_NEWER keeps the resolution reproducible and only takes releases
 # that have been public for a while; move it forward on purpose.
 #

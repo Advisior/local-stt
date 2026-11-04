@@ -94,8 +94,45 @@ class ConfigManager: ObservableObject {
         }
     }
 
-    init() {
-        load()
+    /// Header subtitle in the status menu, "MLX Whisper · Large v3 Turbo".
+    var serviceSummary: String {
+        let model: String
+        switch engine {
+        case "parakeet": model = parakeetModel
+        case "moonshine": model = moonshineModel
+        default: model = whisperModel
+        }
+        let name = Self.modelDisplayName(model)
+        let engineName = Self.engineDisplayName(engine)
+        return name.isEmpty ? engineName : "\(engineName) \u{00B7} \(name)"
+    }
+
+    static func engineDisplayName(_ engine: String) -> String {
+        switch engine {
+        case "mlx": return "MLX Whisper"
+        case "whisper": return "Whisper"
+        case "parakeet": return "Parakeet"
+        case "moonshine": return "Moonshine"
+        default: return engine
+        }
+    }
+
+    /// "mlx-community/whisper-large-v3-mlx" to "Large v3", "tdt-0.6b-v3" to "TDT 0.6B v3".
+    static func modelDisplayName(_ model: String) -> String {
+        var id = model.split(separator: "/").last.map(String.init) ?? model
+        if id.hasSuffix("-mlx") { id = String(id.dropLast(4)) }
+        if id.hasPrefix("whisper-") { id = String(id.dropFirst(8)) }
+        return id.split(separator: "-").map { word -> String in
+            let w = String(word)
+            if w == "tdt" { return "TDT" }
+            if w.range(of: #"^[0-9.]+b$"#, options: .regularExpression) != nil { return w.uppercased() }
+            if w.allSatisfy(\.isLetter) { return w.prefix(1).uppercased() + w.dropFirst() }
+            return w
+        }.joined(separator: " ")
+    }
+
+    init(loadFromDisk: Bool = true) {
+        if loadFromDisk { load() }
     }
 
     // MARK: - TOML Read
