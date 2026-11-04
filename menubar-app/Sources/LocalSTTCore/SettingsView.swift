@@ -1,4 +1,5 @@
 import ServiceManagement
+import Combine
 import SwiftUI
 
 /// One Settings pane plus the shared Save/Cancel bar. All panes edit the same
@@ -277,6 +278,9 @@ private struct VocabularyTab: View {
     @ObservedObject var config: ConfigManager
 
     private let maxVocabularyChars = 1000
+    @State private var promptStatus: PromptStatus?
+    /// The daemon rewrites prompt_status.json after a dictation; re-read it while open.
+    private let statusTimer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
     private var charsUsed: Int { config.initialPrompt.count }
     private var isOverLimit: Bool { charsUsed > maxVocabularyChars }
@@ -310,12 +314,20 @@ private struct VocabularyTab: View {
                     }
 
                     settingHint("Add domain-specific terms the engine might not recognize correctly, e.g. TypeScript, Kubernetes, PostgreSQL, GraphQL, Terraform, CI/CD, OAuth, WebSocket")
+
+                    if let warning = promptStatus?.warning {
+                        Label(warning, systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
                 }
             } header: {
                 Label("Vocabulary", systemImage: "textformat.abc")
             }
         }
         .formStyle(.grouped)
+        .onAppear { promptStatus = PromptStatus.load() }
+        .onReceive(statusTimer) { _ in promptStatus = PromptStatus.load() }
     }
 }
 

@@ -1,0 +1,39 @@
+name: Runtime
+
+# Builds the standalone Python runtime (#63) on pull requests that can change
+# it, so a broken pin, lock or relocation shows up before a release. Nothing
+# is uploaded or published.
+on:
+  pull_request:
+    paths:
+      - "pyproject.toml"
+      - "src/**"
+      - "scripts/build-runtime.sh"
+      - "scripts/runtime_tool.py"
+      - "scripts/runtime/**"
+      - ".github/workflows/runtime.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-runtime:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build standalone runtime
+        run: bash scripts/build-runtime.sh
+
+      - name: Unpack like install.sh and check the version
+        run: |
+          version=$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\(.*\)"/\1/p' pyproject.toml | head -1)
+          asset="dist/Local-STT-runtime-v${version}-macos-arm64.tar.gz"
+          (cd dist && shasum -a 256 -c "$(basename "$asset").sha256")
+          target="$RUNNER_TEMP/Application Support/Local-STT"
+          mkdir -p "$target"
+          tar -xzf "$asset" -C "$target"
+          reported=$("$target/venv/bin/python" -I -c 'import claude_stt; print(claude_stt.__version__)')
+          test "$reported" = "$version"
+          "$target/venv/bin/python" -I -m claude_stt.cli --help
+          du -sh "$target/venv" "$asset"

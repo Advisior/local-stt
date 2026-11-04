@@ -193,7 +193,8 @@ class HotkeyListenerTests(unittest.TestCase):
         listener._on_press(cmd_r)
         self.assertIsNone(listener._intercept_event(Quartz.kCGEventFlagsChanged, event))
         listener._on_release(cmd_r)
-        self.assertIsNone(listener._intercept_event(Quartz.kCGEventFlagsChanged, event))
+        release = Quartz.CGEventCreateKeyboardEvent(None, self._vk(cmd_r), False)
+        self.assertIsNone(listener._intercept_event(Quartz.kCGEventFlagsChanged, release))
         other = Quartz.CGEventCreateKeyboardEvent(None, self._vk(keyboard.Key.cmd_l), True)
         listener._on_press(keyboard.Key.cmd_l)
         self.assertIs(listener._intercept_event(Quartz.kCGEventFlagsChanged, other), other)
@@ -396,6 +397,82 @@ class PynputPinTests(unittest.TestCase):
         match = re.fullmatch(r"pynput>=(\d+)\.(\d+)(?:\.\d+)?", pin.replace(" ", ""))
         self.assertIsNotNone(match, pin)
         self.assertGreaterEqual((int(match[1]), int(match[2])), (1, 8), pin)
+
+
+
+@unittest.skipUnless(_PYNPUT_AVAILABLE, "pynput unavailable in this environment")
+class MixedModifierHotkeyTests(unittest.TestCase):
+    """#70: a hotkey mixing generic and side-specific modifiers keeps every key."""
+
+    def _listener(self, hotkey):
+        self.events: "queue.Queue[str]" = queue.Queue()
+        listener = HotkeyListener(
+            hotkey=hotkey, mode="toggle",
+            on_start=lambda: self.events.put("start"),
+            on_stop=lambda: self.events.put("stop"),
+        )
+        self.addCleanup(listener.stop)
+        return listener
+
+    def _fired(self) -> bool:
+        try:
+            self.events.get(timeout=0.3)
+        except queue.Empty:
+            return False
+        return True
+
+    def _press(self, listener, *keys):
+        for key in keys:
+            listener._on_press(key)
+
+    def test_ac1_given_ctrl_cmd_r_when_parsed_then_both_keys_are_bound(self):
+        listener = self._listener("ctrl+cmd_r")
+        self.assertEqual(
+            listener._record.keys, frozenset({keyboard.Key.ctrl, keyboard.Key.cmd_r})
+        )
+
+    def test_ac1_given_ctrl_cmd_r_when_cmd_r_alone_then_it_does_not_fire(self):
+        listener = self._listener("ctrl+cmd_r")
+        self._press(listener, keyboard.Key.cmd_r)
+        self.assertFalse(self._fired())
+
+    def test_ac2_given_ctrl_cmd_r_when_either_ctrl_and_cmd_r_then_it_fires(self):
+        for ctrl in (keyboard.Key.ctrl_l, keyboard.Key.ctrl_r):
+            with self.subTest(ctrl=ctrl):
+                listener = self._listener("ctrl+cmd_r")
+                self._press(listener, ctrl, keyboard.Key.cmd_r)
+                self.assertTrue(self._fired())
+
+    def test_ac3_given_ctrl_cmd_r_when_ctrl_and_left_cmd_then_it_does_not_fire(self):
+        listener = self._listener("ctrl+cmd_r")
+        self._press(listener, keyboard.Key.ctrl, keyboard.Key.cmd_l)
+        self.assertFalse(self._fired())
+
+    def test_ac3_given_ctrl_cmd_r_when_bound_then_vks_cover_both_ctrls_and_only_right_cmd(self):
+        listener = self._listener("ctrl+cmd_r")
+        vk = lambda key: key.value.vk  # noqa: E731
+        vks = listener._record.vks
+        self.assertTrue({vk(keyboard.Key.ctrl_l), vk(keyboard.Key.ctrl_r)} <= vks)
+        self.assertIn(vk(keyboard.Key.cmd_r), vks)
+        self.assertNotIn(vk(keyboard.Key.cmd_l), vks)
+
+    def test_ac4_given_generic_and_side_variant_of_one_modifier_when_parsed_then_rejected(self):
+        for hotkey in ("ctrl+ctrl_r", "ctrl+ctrl_l", "cmd_r+cmd+space"):
+            with self.subTest(hotkey=hotkey):
+                with self.assertRaises(HotkeyError):
+                    self._listener(hotkey)
+
+    def test_unchanged_given_cmd_r_alone_when_left_cmd_pressed_then_it_does_not_fire(self):
+        listener = self._listener("cmd_r")
+        self._press(listener, keyboard.Key.cmd_l)
+        self.assertFalse(self._fired())
+        self._press(listener, keyboard.Key.cmd_r)
+        self.assertTrue(self._fired())
+
+    def test_unchanged_given_generic_combo_when_right_side_keys_then_it_fires(self):
+        listener = self._listener("ctrl+shift+space")
+        self._press(listener, keyboard.Key.ctrl_r, keyboard.Key.shift_r, keyboard.Key.space)
+        self.assertTrue(self._fired())
 
 
 if __name__ == "__main__":
