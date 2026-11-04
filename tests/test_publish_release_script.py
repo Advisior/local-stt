@@ -186,13 +186,40 @@ class PublishReleaseScriptTests(unittest.TestCase):
         self.assertFalse(any("draft=true" in c for c in self.gh_calls()))
         self.assert_published_after_all_uploads()
 
-    def test_given_published_release_then_drafts_it_before_any_upload(self):
+    def assert_never_downgraded(self):
+        self.assertEqual(self.release_state(), "published")
+        self.assertFalse(any("draft=true" in c or "-X PATCH" in c for c in self.gh_calls()),
+                         self.gh_calls())
+        self.assertFalse(any("--clobber" in c for c in self.gh_calls()), self.gh_calls())
+
+    def test_given_published_release_without_assets_then_adds_them_without_drafting(self):
         self.set_release("published")
         result = self.run_publish()
         self.assert_ok(result)
-        self.assertIn("turning it back into a draft", result.stdout)
-        self.assertLess(self.index_of("draft=true"), self.index_of("release upload"))
-        self.assert_published_after_all_uploads()
+        self.assert_never_downgraded()
+        self.assertLess(self.index_of(f"{self.dist}/{_RUNTIME}"), self.index_of(_APP))
+        attached = (self.gh_dir / "assets.txt").read_text().split()
+        self.assertEqual(sorted(attached), sorted(_ALL))
+
+    def test_given_complete_published_release_when_rerun_then_left_untouched(self):
+        self.set_release("published")
+        (self.gh_dir / "assets.txt").write_text("\n".join(_ALL) + "\n")
+        result = self.run_publish()
+        self.assert_ok(result)
+        self.assertIn("already published with all assets", result.stdout)
+        self.assert_never_downgraded()
+        self.assertFalse(any("release upload" in c for c in self.gh_calls()), self.gh_calls())
+
+    def test_given_published_release_missing_one_asset_then_uploads_only_that_one(self):
+        self.set_release("published")
+        (self.gh_dir / "assets.txt").write_text("\n".join(_ALL[:3]) + "\n")
+        result = self.run_publish()
+        self.assert_ok(result)
+        self.assertIn(f"lacks {_APP}.sha256", result.stdout)
+        self.assert_never_downgraded()
+        uploads = [c for c in self.gh_calls() if "release upload" in c]
+        self.assertEqual(len(uploads), 1, uploads)
+        self.assertTrue(uploads[0].endswith(f"{self.dist}/{_APP}.sha256"), uploads)
 
     # -- refusals: the release is never published incomplete --------------
 
@@ -222,16 +249,22 @@ class PublishReleaseScriptTests(unittest.TestCase):
                 self.assertEqual(self.gh_calls(), [])
 
     def test_given_upload_failure_then_release_stays_draft(self):
-        self.set_release("published")
         result = self.run_publish(FAKE_UPLOAD_FAIL="1")
         self.assertEqual(result.returncode, 1)
         self.assertEqual(self.release_state(), "draft")
         self.assertFalse(any("draft=false" in c for c in self.gh_calls()))
 
+    def test_given_upload_failure_on_published_release_then_it_stays_published(self):
+        self.set_release("published")
+        (self.gh_dir / "assets.txt").write_text(f"{_APP}\n{_APP}.sha256\n")
+        result = self.run_publish(FAKE_UPLOAD_FAIL="1")
+        self.assertEqual(result.returncode, 1)
+        self.assert_never_downgraded()
+
     def test_given_asset_missing_after_upload_then_release_stays_draft(self):
         result = self.run_publish(FAKE_DROP_ASSET=f"{_RUNTIME}.sha256")
         self.assertEqual(result.returncode, 1)
-        self.assertIn(f"{_RUNTIME}.sha256 is not attached", result.stderr)
+        self.assertIn(f"{_RUNTIME}.sha256 not attached; {_TAG} stays a draft", result.stderr)
         self.assertEqual(self.release_state(), "draft")
         self.assertFalse(any("draft=false" in c for c in self.gh_calls()))
 

@@ -71,7 +71,7 @@ When shipping a new version:
 
 2. **Update CHANGELOG.md** with the new version and changes
 
-3. **Push the tag** `vX.Y.Z`. The Release workflow builds the app zip and the standalone Python runtime, creates a draft release if none exists (notes: the CHANGELOG section), attaches both with their `.sha256` files and only then publishes the release. If either build fails, the release stays a draft or is not created, so `install.sh` keeps using the previous release. A release drafted beforehand keeps its notes; one already published in the web UI is turned back into a draft until all assets are attached.
+3. **Push the tag** `vX.Y.Z`. The Release workflow builds the app zip and the standalone Python runtime, creates a draft release if none exists (notes: the CHANGELOG section), attaches both with their `.sha256` files and only then publishes the release. If either build fails, the release stays a draft or is not created, so `install.sh` keeps using the previous release. A release drafted beforehand keeps its notes. A published release is never turned back into a draft: if it already has all assets, a re-run leaves it unchanged; if it lacks some (published in the web UI before the workflow finished), only the missing ones are added. So push the tag or create a draft rather than publishing in the web UI, which would make the release visible before its assets are attached.
 
 To build locally instead: `bash scripts/build-app.sh` and, on an Apple Silicon Mac, `bash scripts/build-runtime.sh`.
 

@@ -3,15 +3,20 @@
 #
 #   scripts/publish-release.sh TAG DIST_DIR [CHANGELOG]   (CI: release.yml)
 #
-# install.sh installs from releases/latest, which never points at a draft. So
-# the release is kept a draft while assets are uploaded and published last:
+# install.sh installs from releases/latest, which never points at a draft.
+# Re-runs are idempotent, and a published release is never turned back into a
+# draft:
 #   - no release for TAG yet: create a draft (notes: this version's CHANGELOG
-#     section)
-#   - a draft exists: keep its notes and use it
-#   - a published release exists (created in the web UI): turn it back into a
-#     draft first; releases/latest then points at the previous release
-# Then upload runtime + checksum, app zip + checksum, check that all four are
-# attached, and publish. On any failure the release stays a draft.
+#     section), upload all assets, check them, then publish. On any failure it
+#     stays a draft.
+#   - a draft exists: keep its notes, upload (replacing earlier attempts),
+#     check, publish.
+#   - a published release with all four assets: verify and leave it unchanged.
+#   - a published release lacking assets (created in the web UI before the
+#     workflow ran): upload only the missing ones, never replacing an attached
+#     asset, and stay published. A failure leaves it as it was.
+# To replace assets of a published release, make it a draft by hand and re-run
+# the workflow.
 #
 # Needs: gh (authenticated, contents: write), GITHUB_REPOSITORY, shasum.
 set -euo pipefail
@@ -63,9 +68,29 @@ release_notes() {
         "$section" "$REPO"
 }
 
-# 2. A draft release for TAG.
-# A failing lookup aborts here (set -e, pipefail) instead of looking like
-# "no release yet".
+# Prints the ASSETS that the release $1 does not have fully uploaded, one per
+# line; nothing when it is complete.
+missing_assets() {
+    local attached asset
+    attached="$(gh api "repos/$REPO/releases/$1" \
+        --jq '.assets[] | select(.state == "uploaded") | .name')"
+    for asset in "${ASSETS[@]}"; do
+        grep -qxF "$asset" <<< "$attached" || echo "$asset"
+    done
+}
+
+# Sets the array LACKING to missing_assets of release $1 (bash 3.2 has no
+# mapfile, and the tests run on macOS too).
+read_lacking() {
+    local line
+    LACKING=()
+    while IFS= read -r line; do
+        [[ -n "$line" ]] && LACKING+=("$line")
+    done < <(missing_assets "$1")
+}
+
+# 2. Find or create the release for TAG. A failing lookup aborts here
+# (set -e, pipefail) instead of looking like "no release yet".
 found="$(find_release)"
 release_id="" is_draft=""
 read -r release_id is_draft <<< "$found" || true
@@ -79,21 +104,33 @@ if [[ -z "$release_id" ]]; then
     found="$(find_release)"
     read -r release_id is_draft <<< "$found" || true
     [[ -n "$release_id" && "$is_draft" == "true" ]] || die "draft release $TAG not found after creating it"
-elif [[ "$is_draft" != "true" ]]; then
-    echo "Release $TAG is public without its assets; turning it back into a draft until all assets are attached."
-    gh api -X PATCH "repos/$REPO/releases/$release_id" -F draft=true >/dev/null
 fi
 [[ "$release_id" =~ ^[0-9]+$ ]] || die "unexpected release id '$release_id'"
 
-# 3. Upload: runtime first, then the app zip.
+# 3a. Published: never downgrade, never replace; only add what is missing.
+if [[ "$is_draft" != "true" ]]; then
+    read_lacking "$release_id"
+    if [[ ${#LACKING[@]} -eq 0 ]]; then
+        echo "Release $TAG is already published with all assets; leaving it unchanged."
+        exit 0
+    fi
+    echo "Release $TAG is published but lacks ${LACKING[*]}; adding them (it stays published)."
+    # ASSETS order: runtime and its checksum before the app zip.
+    for asset in "${LACKING[@]}"; do
+        gh release upload "$TAG" --repo "$REPO" "$DIST_DIR/$asset"
+    done
+    read_lacking "$release_id"
+    [[ ${#LACKING[@]} -eq 0 ]] || die "$TAG still lacks ${LACKING[*]}"
+    echo "Completed $TAG with ${ASSETS[*]}"
+    exit 0
+fi
+
+# 3b. Draft: upload runtime first, then the app zip (replacing partial
+# uploads of an earlier attempt), and publish only when all are attached.
 gh release upload "$TAG" --repo "$REPO" --clobber "$DIST_DIR/$RUNTIME" "$DIST_DIR/$RUNTIME.sha256"
 gh release upload "$TAG" --repo "$REPO" --clobber "$DIST_DIR/$APP" "$DIST_DIR/$APP.sha256"
-
-# 4. Publish only when every asset is attached.
-attached="$(gh api "repos/$REPO/releases/$release_id" --jq '.assets[].name')"
-for asset in "${ASSETS[@]}"; do
-    grep -qxF "$asset" <<< "$attached" || die "$asset is not attached; $TAG stays a draft"
-done
+read_lacking "$release_id"
+[[ ${#LACKING[@]} -eq 0 ]] || die "${LACKING[*]} not attached; $TAG stays a draft"
 # legacy: "latest" follows date and semver, so re-running an old tag does not
 # make it the release install.sh picks.
 gh api -X PATCH "repos/$REPO/releases/$release_id" -F draft=false -f make_latest=legacy >/dev/null
