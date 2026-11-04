@@ -74,5 +74,38 @@ class HotkeyPauseTests(unittest.TestCase):
         self.assertEqual(self.events.get(timeout=0.5), "start")
 
 
+    def _armed_recording(self):
+        self.cancels = []
+        self.listener.on_cancel = lambda: self.cancels.append("cancel")
+        self.listener._on_press(keyboard.Key.f1)
+        self.listener._on_release(keyboard.Key.f1)
+        self.assertEqual(self.events.get(timeout=0.5), "start")
+        self.listener.cancel_armed = True
+
+    def test_given_recording_and_recorder_active_when_esc_pressed_then_no_cancel_and_not_swallowed(self):
+        self._armed_recording()
+        self.pause_file.touch()
+        self.listener._on_press(keyboard.Key.esc)
+        time.sleep(0.05)
+        self.assertEqual(self.cancels, [])
+        self.assertTrue(self.listener.cancel_armed)
+        self.assertTrue(self.listener.is_recording)
+        self.assertEqual(self.listener._swallow_press_vks, set())
+
+    def test_given_esc_held_through_pause_end_when_it_repeats_then_no_cancel(self):
+        self._armed_recording()
+        self.pause_file.touch()
+        self.listener._on_press(keyboard.Key.esc)
+        self.pause_file.unlink()
+        self.listener._on_press(keyboard.Key.esc)  # key repeat
+        time.sleep(0.05)
+        self.assertEqual(self.cancels, [])
+        self.listener._on_release(keyboard.Key.esc)
+        self.listener._on_press(keyboard.Key.esc)
+        time.sleep(0.05)
+        self.assertEqual(self.cancels, ["cancel"])
+        self.assertFalse(self.listener.is_recording)
+
+
 if __name__ == "__main__":
     unittest.main()

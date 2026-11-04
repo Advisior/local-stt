@@ -35,6 +35,7 @@ uv run ruff check src/
 - `hotkey.py` - Global hotkey listener using pynput (supports toggle and push-to-talk modes)
 - `recorder.py` - Audio capture via sounddevice
 - `engines/` - STT engine implementations (MLX Whisper default on Apple Silicon, Moonshine default elsewhere, Whisper and Parakeet optional)
+- `overlay.py` - Recording HUD subprocess (PyObjC panel); states, protocol and layout live in `overlay_model.py`, daemon side in `daemon_overlay.py`
 - `keyboard.py` - Text output via keyboard injection or clipboard fallback
 - `window.py` - Platform-specific window tracking to restore focus after transcription
 - `config.py` - TOML-based config with validation, stored in `~/.config/local-stt/`
@@ -53,6 +54,7 @@ Transcription runs in a dedicated worker thread to avoid blocking the hotkey lis
 - `commands/` - Slash commands (setup, start, stop, status, config) as markdown files
 - `hooks/hooks.json` - Claude Code plugin hooks
 - `scripts/setup.py` - Bootstrap script that handles venv creation, dependency install, model download
+- `scripts/build-runtime.sh` - Builds the standalone Python runtime release asset that `install.sh` prefers (macOS arm64; pins in `scripts/runtime/`, regenerate the locks with `scripts/lock-runtime.sh` after dependency changes)
 - `.claude-plugin/plugin.json` - Plugin metadata
 
 ## Version Bumps

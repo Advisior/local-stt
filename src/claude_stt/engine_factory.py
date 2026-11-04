@@ -7,6 +7,7 @@ from .engines.moonshine import MoonshineEngine
 from .engines.parakeet_engine import ParakeetEngine
 from .engines.whisper import WhisperEngine
 from .errors import EngineError
+from .prompt import effective_prompt
 
 
 def build_engine(config: Config) -> STTEngine:
@@ -17,13 +18,13 @@ def build_engine(config: Config) -> STTEngine:
         return WhisperEngine(
             model_name=config.whisper_model,
             language=config.language,
-            initial_prompt=config.initial_prompt,
+            initial_prompt=effective_prompt(config),
         )
     if config.engine == "mlx":
         return MLXWhisperEngine(
             model_name=config.whisper_model,
             language=config.language,
-            initial_prompt=config.initial_prompt,
+            initial_prompt=effective_prompt(config),
         )
     if config.engine == "parakeet":
         return ParakeetEngine(model_name=config.parakeet_model)

@@ -12,7 +12,7 @@ _MAC_MODIFIER_FLAG_BITS = {
 
 
 class MacInterceptMixin:
-    """Needs _lock, _logger, _bindings, _suppressed_vks, _held_char_vks,
+    """Needs _lock, _logger, _bindings, _suppressed_vks, _swallow_press_vks, _held_char_vks,
     _pending_injected, _own_pid, on_other_key, _handle_press and
     _handle_release from HotkeyListener."""
 
@@ -87,6 +87,11 @@ class MacInterceptMixin:
         keycode alone would swallow every plain Space system-wide when the
         hotkey is ctrl+shift+space.
         """
+        if is_key_down and vk in self._swallow_press_vks:
+            # The press that cancelled a recording (#60): swallow it and its release.
+            self._swallow_press_vks.discard(vk)
+            self._suppressed_vks.add(vk)
+            return True
         if vk in self._suppressed_vks:
             if not is_key_down:
                 self._suppressed_vks.discard(vk)  # key-up or modifier release
