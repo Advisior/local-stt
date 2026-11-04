@@ -59,6 +59,8 @@ A plain zip download of the app alone will not work — see [Development](#devel
 3. **Open Settings** (click the menu bar icon > Settings) to configure your hotkey, language, and vocabulary
 4. **Press your hotkey** (default: `ctrl+shift+space` in toggle mode: press to start, press again to stop), speak — text appears at your cursor
 
+On macOS a small capsule at the bottom center of the screen shows the recording: a red dot, a level meter, the elapsed time and an `esc` hint. Press **Esc** while recording to cancel; the audio is dropped and nothing is typed. With Reduce Motion on, the capsule shows a static microphone and "Listening" instead of the moving meter. In private mode it adds an eye-slash symbol.
+
 Fresh installs on Apple Silicon use **MLX Whisper** (`large-v3-turbo`), which understands German and many other languages. Where MLX is not available (Intel Macs, Linux, Windows) the default is **Moonshine**, which understands **English only**. An existing `config.toml` keeps the engine it already names.
 
 The speech model is downloaded once on first use (about 1.5 GB for MLX Whisper `medium` or `large-v3-turbo`). After that, everything runs 100% offline.
