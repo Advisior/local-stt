@@ -99,6 +99,7 @@ struct HotkeyField: NSViewRepresentable {
         let parent: HotkeyField
         var localMonitor: Any?
         var pendingModifier: String?
+        private let daemonPause = DaemonHotkeyPause()
 
         init(parent: HotkeyField) {
             self.parent = parent
@@ -112,11 +113,13 @@ struct HotkeyField: NSViewRepresentable {
                 NSEvent.removeMonitor(monitor)
                 localMonitor = nil
             }
+            daemonPause.end()
         }
 
         func startRecording() {
             pendingModifier = nil
             parent.isRecording = true
+            daemonPause.begin()
 
             localMonitor = NSEvent.addLocalMonitorForEvents(
                 matching: [.keyDown, .flagsChanged]
@@ -163,6 +166,7 @@ struct HotkeyField: NSViewRepresentable {
         func stopRecording() {
             pendingModifier = nil
             parent.isRecording = false
+            daemonPause.end()
             if let monitor = localMonitor {
                 NSEvent.removeMonitor(monitor)
                 localMonitor = nil
@@ -373,4 +377,40 @@ private func checkConflict(_ hotkey: String) -> String? {
         return "Conflicts with \(system)"
     }
     return nil
+}
+
+// MARK: - Daemon hotkey pause
+
+/// Keeps the daemon's hotkeys off while the recorder captures a shortcut,
+/// so a combination containing the record key (ctrl+f1 with record key f1)
+/// reaches the recorder instead of starting a dictation (#49). The daemon
+/// ignores the file once it is older than 10 seconds, so it is refreshed
+/// while recording and a crash cannot leave the hotkeys off.
+final class DaemonHotkeyPause {
+    private var timer: Timer?
+    private var url: URL { ConfigManager.configDir.appendingPathComponent("hotkeys_paused") }
+
+    func begin() {
+        touch()
+        timer?.invalidate()
+        let timer = Timer(timeInterval: 3, repeats: true) { [weak self] _ in self?.touch() }
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
+    }
+
+    func end() {
+        timer?.invalidate()
+        timer = nil
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    private func touch() {
+        let fm = FileManager.default
+        try? fm.createDirectory(at: ConfigManager.configDir, withIntermediateDirectories: true)
+        if fm.fileExists(atPath: url.path) {
+            try? fm.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path)
+        } else {
+            fm.createFile(atPath: url.path, contents: nil)
+        }
+    }
 }

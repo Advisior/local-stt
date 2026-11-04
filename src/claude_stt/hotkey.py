@@ -19,6 +19,7 @@ except Exception as exc:
 
 from .errors import HotkeyError
 from .hotkey_darwin import MacInterceptMixin
+from .hotkey_pause import paused as _hotkeys_paused
 
 RECORD = "record"
 
@@ -77,6 +78,9 @@ class HotkeyListener(MacInterceptMixin):
         self._listener: Optional[keyboard.Listener] = None
         self._is_recording = False
         self._pressed_keys: set = set()
+        # Keys that went down while the app's recorder paused the hotkeys (#49);
+        # their key repeats must not fire once the pause ends.
+        self._paused_keys: set = set()
         self._suppressed_vks: set[int] = set()
         # Character keys carry their keycode only on the press event (it depends
         # on the keyboard layout): normalized key -> vk while the key is held.
@@ -364,6 +368,13 @@ class HotkeyListener(MacInterceptMixin):
                 if not b.active
                 and b.keys.issubset({self._view(k, b) for k in self._pressed_keys})
             ]
+            # While the app's recorder captures a shortcut (#49) the daemon takes
+            # no keys at all, Esc included: the recorder needs Esc to abort.
+            if _hotkeys_paused():
+                self._paused_keys.add(normalized)
+                return
+            if normalized in self._paused_keys:
+                return
             if not matched:
                 if normalized == keyboard.Key.esc and self._cancel_applies():
                     self._fire_cancel(vk)
@@ -419,6 +430,7 @@ class HotkeyListener(MacInterceptMixin):
 
         with self._lock:
             self._pressed_keys.discard(normalized)
+            self._paused_keys.discard(normalized)
             self._held_char_vks.pop(normalized, None)
             for binding in self._bindings:
                 if self._view(normalized, binding) in binding.keys:
@@ -472,6 +484,7 @@ class HotkeyListener(MacInterceptMixin):
             self._listener = None
             with self._lock:
                 self._pressed_keys.clear()
+                self._paused_keys.clear()
                 self._suppressed_vks.clear()
                 self._swallow_press_vks.clear()
                 self._held_char_vks.clear()
