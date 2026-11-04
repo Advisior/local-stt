@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-11-04
+
+### Added
+- Esc cancels a running recording on macOS: the audio is dropped, nothing is transcribed, typed or added to history, and that Esc press does not reach the focused app. Outside a recording, and with modifiers, Esc passes through unchanged (#60)
+- The recording overlay shows a live microphone level meter and, in private mode, an eye-slash symbol (#60)
+
+### Changed
+- The recording overlay is a native HUD: a non-activating panel with the `.hudWindow` material, shaped as a capsule at the bottom center of the main screen, with system colors for light, dark and Increase Contrast. A steady red dot replaces the blinking one, the time reads `m:ss`, the capsule sizes itself to its text, and the states read "Transcribing…", "Inserted n words" or "Copied n words" (#60)
+- With Reduce Motion on, the overlay shows a static microphone and "Listening" instead of the meter and no spinner (#60)
+- The overlay carries VoiceOver labels and announces recording, transcribing, the result and hints (#60)
+
+### Fixed
+- When the transcription could not be delivered, the overlay says "Could not insert text" instead of a word count (#60)
+
 ## [0.13.0] - 2026-11-04
 
 ### Added

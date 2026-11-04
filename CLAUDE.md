@@ -35,6 +35,7 @@ uv run ruff check src/
 - `hotkey.py` - Global hotkey listener using pynput (supports toggle and push-to-talk modes)
 - `recorder.py` - Audio capture via sounddevice
 - `engines/` - STT engine implementations (MLX Whisper default on Apple Silicon, Moonshine default elsewhere, Whisper and Parakeet optional)
+- `overlay.py` - Recording HUD subprocess (PyObjC panel); states, protocol and layout live in `overlay_model.py`, daemon side in `daemon_overlay.py`
 - `keyboard.py` - Text output via keyboard injection or clipboard fallback
 - `window.py` - Platform-specific window tracking to restore focus after transcription
 - `config.py` - TOML-based config with validation, stored in `~/.config/local-stt/`

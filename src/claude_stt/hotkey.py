@@ -47,6 +47,7 @@ class HotkeyListener(MacInterceptMixin):
         on_stop: Optional[Callable[[], None]] = None,
         mode: str = "push-to-talk",
         on_other_key: Optional[Callable[[], None]] = None,
+        on_cancel: Optional[Callable[[], None]] = None,
     ):
         """Initialize the hotkey listener.
 
@@ -58,12 +59,20 @@ class HotkeyListener(MacInterceptMixin):
             on_other_key: macOS only. Called on the listener thread for every
                 key-down that reaches the focused app and was not sent by this
                 process (no modifiers, no hotkey keys). Must return quickly.
+            on_cancel: Called when Esc is pressed alone while ``cancel_armed``
+                is set (#60). The listener disarms itself and, on macOS,
+                swallows that Esc press so the focused app never sees it.
         """
         self.hotkey_str = hotkey
         self.on_start = on_start
         self.on_stop = on_stop
         self.mode = mode
         self.on_other_key = on_other_key
+        self.on_cancel = on_cancel
+        # Set by the daemon while a recording runs; Esc then cancels it.
+        self.cancel_armed = False
+        # macOS keycodes whose next key-down the intercept must swallow.
+        self._swallow_press_vks: set[int] = set()
 
         self._listener: Optional[keyboard.Listener] = None
         self._is_recording = False
@@ -356,6 +365,8 @@ class HotkeyListener(MacInterceptMixin):
                 and b.keys.issubset({self._view(k, b) for k in self._pressed_keys})
             ]
             if not matched:
+                if normalized == keyboard.Key.esc and self._cancel_applies():
+                    self._fire_cancel(vk)
                 return
             # "shift+f1" must not also fire "f1": the larger combination wins.
             winner = max(matched, key=lambda b: len(b.keys))
@@ -381,6 +392,25 @@ class HotkeyListener(MacInterceptMixin):
             # Push-to-talk: press to start
             self._is_recording = True
             self._enqueue_event("start", self.on_start)
+
+    def _cancel_applies(self) -> bool:
+        """Esc alone (record hotkey keys may be held). Call with the lock held."""
+        if not (self.cancel_armed and self.on_cancel):
+            return False
+        others = {
+            k for k in self._pressed_keys
+            if k != keyboard.Key.esc and self._view(k, self._record) not in self._record.keys
+        }
+        return not others
+
+    def _fire_cancel(self, vk: Optional[int]) -> None:
+        """Cancel the recording. Call with the lock held."""
+        self.cancel_armed = False
+        self._is_recording = False
+        esc_vk = vk if vk is not None else getattr(keyboard.Key.esc.value, "vk", None)
+        if esc_vk is not None:
+            self._swallow_press_vks.add(esc_vk)
+        self._enqueue_event("cancel", self.on_cancel)
 
     def _handle_release(self, key):
         normalized = self._normalize_key(key)
@@ -443,6 +473,7 @@ class HotkeyListener(MacInterceptMixin):
             with self._lock:
                 self._pressed_keys.clear()
                 self._suppressed_vks.clear()
+                self._swallow_press_vks.clear()
                 self._held_char_vks.clear()
                 self._pending_injected.clear()
                 for binding in self._bindings:

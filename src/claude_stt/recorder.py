@@ -368,6 +368,14 @@ class AudioRecorder:
         """Check if currently recording."""
         return self._recording
 
+    def current_level(self) -> float:
+        """Level (0-1) of the newest recorded chunk, for the HUD meter (#60)."""
+        with self._lock:
+            chunk = self._recorded_chunks[-1] if self._recorded_chunks else None
+        if chunk is None:
+            return 0.0
+        return self.get_volume_level(chunk)
+
     def get_volume_level(self, chunk: np.ndarray) -> float:
         """Calculate volume level (0-1) for a chunk.
 

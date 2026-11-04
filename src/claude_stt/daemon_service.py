@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import logging
-import os
 import queue
 import signal
 import subprocess
-import sys
 import threading
 import time
 import traceback
@@ -26,26 +24,27 @@ from .hotkey import HotkeyListener
 from .keyboard import output_text
 from .recorder import AudioRecorder, RecorderConfig
 from .daemon_audio import AudioRecoveryMixin
+from .daemon_overlay import OverlayMixin
 from .daemon_undo import UndoHotkeyMixin
 from .sounds import play_sound
 from .undo import UndoTracker
 from .window import get_active_window, WindowInfo
 
 
-class STTDaemon(UndoHotkeyMixin, AudioRecoveryMixin):
+class STTDaemon(OverlayMixin, UndoHotkeyMixin, AudioRecoveryMixin):
     """Main daemon that coordinates all STT components."""
 
     def __init__(self, config: Optional[Config] = None):
         """Initialize the daemon; load the config from file if None."""
         self.config = (config or Config.load()).validate()
         self._running = False
-        self._recording = False
 
         # Components
         self._recorder: Optional[AudioRecorder] = None
         self._engine: Optional[STTEngine] = None
         self._prompt = PromptRefresher(self.config)
         self._hotkey: Optional[HotkeyListener] = None
+        self._recording = False  # after _hotkey: the setter arms Esc cancel
         self._undo: Optional[UndoTracker] = None
         self._transcribing = False
 
@@ -65,40 +64,6 @@ class STTDaemon(UndoHotkeyMixin, AudioRecoveryMixin):
         )
         self._transcribe_thread: Optional[threading.Thread] = None
         self._logger = logging.getLogger(__name__)
-
-    def _start_overlay(self) -> None:
-        """Start the overlay indicator subprocess."""
-        try:
-            overlay_module = os.path.join(os.path.dirname(__file__), "overlay.py")
-            self._overlay_proc = subprocess.Popen(
-                [sys.executable, overlay_module],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            self._logger.info("Overlay indicator started (PID %d)", self._overlay_proc.pid)
-        except Exception:
-            self._logger.debug("Overlay indicator not available", exc_info=True)
-            self._overlay_proc = None
-
-    def _overlay_send(self, command: str) -> None:
-        """Send a command to the overlay subprocess."""
-        if self._overlay_proc and self._overlay_proc.poll() is None:
-            try:
-                self._overlay_proc.stdin.write((command + "\n").encode())
-                self._overlay_proc.stdin.flush()
-            except (BrokenPipeError, OSError):
-                self._overlay_proc = None
-
-    def _stop_overlay(self) -> None:
-        """Stop the overlay subprocess."""
-        if self._overlay_proc and self._overlay_proc.poll() is None:
-            self._overlay_send("QUIT")
-            try:
-                self._overlay_proc.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                self._overlay_proc.kill()
-            self._overlay_proc = None
 
     def _init_components(self) -> bool:
         """Initialize all components.
@@ -140,6 +105,7 @@ class STTDaemon(UndoHotkeyMixin, AudioRecoveryMixin):
                 on_start=self._on_recording_start,
                 on_stop=self._on_recording_stop,
                 mode=self.config.mode,
+                on_cancel=self._on_recording_cancel,
             )
             self._setup_undo()
         except (RecorderError, EngineError, HotkeyError) as exc:
@@ -246,14 +212,17 @@ class STTDaemon(UndoHotkeyMixin, AudioRecoveryMixin):
         inserted = output_text(text, window_info, self.config, private=private)
         if not inserted:
             self._logger.warning("Failed to output transcription")
-        elif self._undo:
-            # In-memory only; undo keeps working in private mode.
-            self._undo.record(inserted, start)
+            done = "HINT Could not insert text"  # never claim words that did not arrive
+        else:
+            done = f"DONE {word_count} {inserted.mode}"
+            if self._undo:
+                # In-memory only; undo keeps working in private mode.
+                self._undo.record(inserted, start)
         if private:
             self._logger.info("Private mode on: transcription not added to history")
         else:
             self._append_history(text, self._last_duration_s, db)
-        self._overlay_send(f"DONE {word_count}")
+        self._overlay_send(done)
 
     def _append_history(self, text: str, duration_s: float, db: float) -> None:
         """Append transcription to history file, keeping last 100 entries."""
@@ -325,7 +294,7 @@ class STTDaemon(UndoHotkeyMixin, AudioRecoveryMixin):
             # Start recording
             if self._recorder and self._recorder.start():
                 self._logger.info("Recording started")
-                self._overlay_send("RECORDING")
+                self._overlay_send(self._overlay_recording_command())
             else:
                 self._recording = False
                 self._report_no_input()
@@ -463,6 +432,7 @@ class STTDaemon(UndoHotkeyMixin, AudioRecoveryMixin):
         try:
             while self._running:
                 self._check_max_recording_time()
+                self._overlay_push_level()
                 self._check_audio_stream()
                 self._check_default_input()
                 time.sleep(0.1)
