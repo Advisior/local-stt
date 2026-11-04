@@ -66,6 +66,13 @@ class EscCancelTests(unittest.TestCase):
         self._release(listener, keyboard.Key.esc, *reversed(hotkey))
         self.assertEqual(self.events, ["start", "cancel"])
 
+    def test_ac9_given_push_to_talk_held_when_esc_with_an_extra_modifier_then_nothing_fires(self):
+        listener = self._listener(mode="push-to-talk")
+        self._press(listener, keyboard.Key.ctrl, keyboard.Key.shift, keyboard.Key.space)
+        listener.cancel_armed = True
+        self._press(listener, keyboard.Key.cmd, keyboard.Key.esc)
+        self.assertEqual(self.events, ["start"])
+
     def test_ac9_given_not_armed_when_esc_pressed_then_nothing_fires(self):
         listener = self._listener()
         self._press(listener, keyboard.Key.esc)

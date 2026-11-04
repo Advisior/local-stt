@@ -26,6 +26,7 @@ else:
     from . import overlay_model as model
 
 HEIGHT = 36.0
+TEXT_VPAD = 9.0  # top and bottom inset of a wrapped text
 PADDING = 14.0
 SPACING = 10.0
 BOTTOM_MARGIN = 22.0
@@ -128,7 +129,7 @@ class _CapsuleBorderView(AppKit.NSView):
     def drawRect_(self, rect):
         AppKit.NSColor.labelColor().colorWithAlphaComponent_(0.14).set()
         bounds = AppKit.NSInsetRect(self.bounds(), 0.25, 0.25)
-        radius = bounds.size.height / 2
+        radius = min(bounds.size.height, HEIGHT) / 2
         path = AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(bounds, radius, radius)
         path.setLineWidth_(0.5)
         path.stroke()
@@ -228,25 +229,44 @@ class HudView(AppKit.NSVisualEffectView):
         return self
 
 
-def show_items(hud, items, levels, reduce_motion: bool, max_width: float) -> float:
-    """Replace the capsule content with views for ``items``; returns its width."""
+def _wrap_label(view, width: float) -> None:
+    """Let a text label wrap to ``width`` so nothing is cut off (AC-10)."""
+    view.setLineBreakMode_(AppKit.NSLineBreakByWordWrapping)
+    view.setMaximumNumberOfLines_(0)
+    view.setPreferredMaxLayoutWidth_(width)
+    view.setFrameSize_(Foundation.NSMakeSize(width, view.fittingSize().height))
+
+
+def show_items(hud, items, levels, reduce_motion: bool, max_width: float) -> tuple[float, float]:
+    """Replace the capsule content with views for ``items``; returns (width, height).
+
+    A text wider than the screen allows wraps onto more lines and the capsule
+    grows taller instead of truncating it.
+    """
     for sub in list(hud.subviews()):
         sub.removeFromSuperview()
     views = [build_item_view(item, levels, reduce_motion) for item in items]
     widths = [v.frame().size.width for v in views]
     origins, width = model.layout(widths, PADDING, SPACING, max_width=max_width)
+    for item, view, x in zip(items, views, origins):
+        available = max(0.0, width - PADDING - x)
+        if view.frame().size.width > available:  # only when capped by the screen
+            if item.kind == "text":
+                _wrap_label(view, available)
+            else:
+                view.setFrameSize_(Foundation.NSMakeSize(available, view.frame().size.height))
+    content = max((v.frame().size.height for v in views), default=0.0)
+    height = model.capsule_height(content, HEIGHT, TEXT_VPAD)
     for view, x in zip(views, origins):
         size = view.frame().size
-        item_width = min(size.width, max(0.0, width - PADDING - x))  # < size only when capped
-        y = round((HEIGHT - size.height) / 2)
-        view.setFrame_(Foundation.NSMakeRect(x, y, item_width, size.height))
+        view.setFrameOrigin_(Foundation.NSMakePoint(x, round((height - size.height) / 2)))
         hud.addSubview_(view)
-    hud.setFrameSize_(Foundation.NSMakeSize(width, HEIGHT))
+    hud.setFrameSize_(Foundation.NSMakeSize(width, height))
     hud.layer().setCornerRadius_(HEIGHT / 2)
     border = _CapsuleBorderView.alloc().initWithFrame_(hud.bounds())
     border.setAccessibilityElement_(False)
     hud.addSubview_(border)
-    return width
+    return width, height
 
 
 class RecordingOverlay:
@@ -316,12 +336,12 @@ class RecordingOverlay:
         screen = AppKit.NSScreen.mainScreen() or AppKit.NSScreen.screens()[0]
         visible = screen.visibleFrame()
         max_width = visible.size.width - SCREEN_INSET
-        width = show_items(self._hud, items, self._state.levels, reduce_motion, max_width)
+        width, height = show_items(self._hud, items, self._state.levels, reduce_motion, max_width)
         x, y = model.capsule_origin(
             (visible.origin.x, visible.origin.y, visible.size.width, visible.size.height),
-            width, HEIGHT, BOTTOM_MARGIN,
+            width, height, BOTTOM_MARGIN,
         )
-        self._panel.setFrame_display_(Foundation.NSMakeRect(round(x), round(y), width, HEIGHT), True)
+        self._panel.setFrame_display_(Foundation.NSMakeRect(round(x), round(y), width, height), True)
         self._panel.invalidateShadow()
         self._panel.orderFrontRegardless()
 

@@ -198,6 +198,11 @@ def layout(
     return origins, total
 
 
+def capsule_height(content_height: float, base: float, vpad: float) -> float:
+    """Capsule height: the base height, or taller when a text wraps (AC-10)."""
+    return max(base, content_height + 2 * vpad)
+
+
 def capsule_origin(visible_frame, width: float, height: float, margin: float) -> tuple[float, float]:
     """Bottom center of a screen's visible frame (x, y, w, h), above the Dock."""
     x, y, w, _h = visible_frame

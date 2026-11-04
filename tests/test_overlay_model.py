@@ -184,6 +184,10 @@ class LayoutTests(unittest.TestCase):
         _, width = m.layout([16, 200], padding=14, spacing=10, max_width=600)
         self.assertEqual(width, 254)
 
+    def test_ac10_a_wrapped_hint_grows_the_capsule_instead_of_truncating(self):
+        self.assertEqual(m.capsule_height(16, base=36, vpad=9), 36)
+        self.assertEqual(m.capsule_height(34, base=36, vpad=9), 52)
+
     def test_empty_layout(self):
         self.assertEqual(m.layout([], padding=14, spacing=10), ([], 28))
 
