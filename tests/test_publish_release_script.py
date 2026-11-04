@@ -21,8 +21,8 @@ _RUNTIME = f"Local-STT-runtime-{_TAG}-macos-arm64.tar.gz"
 _APP = f"Local-STT-{_TAG}.zip"
 _ALL = [_RUNTIME, f"{_RUNTIME}.sha256", _APP, f"{_APP}.sha256"]
 
-_REAL_TOOLS = ("awk", "bash", "cat", "dirname", "grep", "head", "mktemp", "rm", "sed", "shasum",
-               "tr")
+_REAL_TOOLS = ("awk", "bash", "cat", "dirname", "grep", "head", "mkdir", "mktemp", "rm", "sed",
+               "shasum", "tr")
 
 # State lives in files: release.state is none, draft or published; assets.txt
 # lists attached asset names.
@@ -48,6 +48,7 @@ case "$1 $2" in
         for arg in "$@"; do
             if [[ -f "$arg" ]]; then
                 name="${arg##*/}"
+                echo "$name" >> "$GH_DIR/uploaded.txt"
                 [[ "$name" == "${FAKE_DROP_ASSET:-}" ]] || echo "$name" >> "$GH_DIR/assets.txt"
             fi
         done
@@ -60,7 +61,28 @@ case "$1 $2" in
         fi
         ;;
     "api repos/"*)
+        # FAKE_ASSETS_FAIL=always fails every asset lookup; =after-upload only
+        # once something was uploaded.
+        case "${FAKE_ASSETS_FAIL:-}" in
+            always) exit 1 ;;
+            after-upload) [[ ! -s "$GH_DIR/uploaded.txt" ]] || exit 1 ;;
+        esac
         cat "$GH_DIR/assets.txt" 2>/dev/null || true
+        ;;
+    "release download")
+        # Serves the remote copy of an attached asset from $GH_DIR/remote.
+        [[ -z "${FAKE_DOWNLOAD_FAIL:-}" ]] || exit 1
+        pattern="" dir=""
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                --pattern) pattern="$2"; shift ;;
+                --dir) dir="$2"; shift ;;
+            esac
+            shift
+        done
+        [[ -f "$GH_DIR/remote/$pattern" ]] || exit 1
+        mkdir -p "$dir"
+        cp "$GH_DIR/remote/$pattern" "$dir/$pattern"
         ;;
     *)
         echo "unexpected gh call: $*" >&2
@@ -210,16 +232,95 @@ class PublishReleaseScriptTests(unittest.TestCase):
         self.assert_never_downgraded()
         self.assertFalse(any("release upload" in c for c in self.gh_calls()), self.gh_calls())
 
-    def test_given_published_release_missing_one_asset_then_uploads_only_that_one(self):
+    def publish_with_remote(self, remote, **env):
+        """Published release whose attached assets are `remote` (name -> bytes)."""
         self.set_release("published")
-        (self.gh_dir / "assets.txt").write_text("\n".join(_ALL[:3]) + "\n")
-        result = self.run_publish()
+        (self.gh_dir / "remote").mkdir()
+        for name, data in remote.items():
+            (self.gh_dir / "remote" / name).write_bytes(data)
+        (self.gh_dir / "assets.txt").write_text("".join(f"{n}\n" for n in remote))
+        return self.run_publish(**env)
+
+    def uploads(self):
+        return [c for c in self.gh_calls() if "release upload" in c]
+
+    def local(self, name):
+        return (self.dist / name).read_bytes()
+
+    def test_given_published_pair_both_missing_then_uploads_both(self):
+        result = self.publish_with_remote(
+            {n: self.local(n) for n in (_RUNTIME, f"{_RUNTIME}.sha256")})
         self.assert_ok(result)
-        self.assertIn(f"lacks {_APP}.sha256", result.stdout)
         self.assert_never_downgraded()
-        uploads = [c for c in self.gh_calls() if "release upload" in c]
-        self.assertEqual(len(uploads), 1, uploads)
-        self.assertTrue(uploads[0].endswith(f"{self.dist}/{_APP}.sha256"), uploads)
+        self.assertEqual(len(self.uploads()), 2, self.uploads())
+        self.assertTrue(self.uploads()[0].endswith(f"{self.dist}/{_APP}"))
+        self.assertTrue(self.uploads()[1].endswith(f"{self.dist}/{_APP}.sha256"))
+
+    def test_given_remote_archive_matching_local_checksum_then_uploads_checksum(self):
+        remote = {n: self.local(n) for n in (_RUNTIME, f"{_RUNTIME}.sha256", _APP)}
+        result = self.publish_with_remote(remote)
+        self.assert_ok(result)
+        self.assert_never_downgraded()
+        self.assertTrue(any(f"release download {_TAG}" in c and f"--pattern {_APP} " in c
+                            for c in self.gh_calls()), self.gh_calls())
+        self.assertEqual(len(self.uploads()), 1, self.uploads())
+        self.assertTrue(self.uploads()[0].endswith(f"{self.dist}/{_APP}.sha256"))
+
+    def test_given_remote_archive_from_another_build_then_refuses_checksum(self):
+        remote = {n: self.local(n) for n in (_RUNTIME, f"{_RUNTIME}.sha256")}
+        remote[_APP] = b"app from an earlier build"
+        result = self.publish_with_remote(remote)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(f"attached {_APP} does not match", result.stderr)
+        self.assertEqual(self.uploads(), [])
+        self.assert_never_downgraded()
+
+    def test_given_remote_checksum_matching_local_archive_then_uploads_archive(self):
+        remote = {n: self.local(n) for n in (_RUNTIME, f"{_RUNTIME}.sha256", f"{_APP}.sha256")}
+        result = self.publish_with_remote(remote)
+        self.assert_ok(result)
+        self.assert_never_downgraded()
+        self.assertEqual(len(self.uploads()), 1, self.uploads())
+        self.assertTrue(self.uploads()[0].endswith(f"{self.dist}/{_APP}"))
+
+    def test_given_remote_checksum_of_another_build_then_refuses_archive(self):
+        remote = {n: self.local(n) for n in (_RUNTIME, f"{_RUNTIME}.sha256")}
+        remote[f"{_APP}.sha256"] = f"{'0' * 64}  {_APP}\n".encode()
+        result = self.publish_with_remote(remote)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(f"attached {_APP}.sha256 does not match", result.stderr)
+        self.assertEqual(self.uploads(), [])
+        self.assert_never_downgraded()
+
+    def test_given_malformed_remote_checksum_then_refuses(self):
+        remote = {n: self.local(n) for n in (_RUNTIME, f"{_RUNTIME}.sha256")}
+        remote[f"{_APP}.sha256"] = b"garbage\n"
+        result = self.publish_with_remote(remote)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(self.uploads(), [])
+
+    def test_given_remote_asset_cannot_be_downloaded_then_refuses(self):
+        remote = {n: self.local(n) for n in (_RUNTIME, f"{_RUNTIME}.sha256", _APP)}
+        result = self.publish_with_remote(remote, FAKE_DOWNLOAD_FAIL="1")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(f"could not download the attached {_APP}", result.stderr)
+        self.assertEqual(self.uploads(), [])
+        self.assert_never_downgraded()
+
+    def test_given_mismatch_in_second_pair_then_first_pair_not_uploaded_either(self):
+        # Runtime pair missing entirely, app pair half-present and mismatched:
+        # every pair is checked before anything is uploaded.
+        result = self.publish_with_remote({_APP: b"app from an earlier build"})
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(self.uploads(), [])
+
+    def test_given_asset_lookup_fails_on_published_release_then_nothing_changes(self):
+        self.set_release("published")
+        result = self.run_publish(FAKE_ASSETS_FAIL="always")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("could not read the assets", result.stderr)
+        self.assertEqual(self.uploads(), [])
+        self.assert_never_downgraded()
 
     # -- refusals: the release is never published incomplete --------------
 
@@ -265,6 +366,13 @@ class PublishReleaseScriptTests(unittest.TestCase):
         result = self.run_publish(FAKE_DROP_ASSET=f"{_RUNTIME}.sha256")
         self.assertEqual(result.returncode, 1)
         self.assertIn(f"{_RUNTIME}.sha256 not attached; {_TAG} stays a draft", result.stderr)
+        self.assertEqual(self.release_state(), "draft")
+        self.assertFalse(any("draft=false" in c for c in self.gh_calls()))
+
+    def test_given_asset_lookup_fails_after_upload_then_draft_is_not_published(self):
+        result = self.run_publish(FAKE_ASSETS_FAIL="after-upload")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("could not read the assets", result.stderr)
         self.assertEqual(self.release_state(), "draft")
         self.assertFalse(any("draft=false" in c for c in self.gh_calls()))
 

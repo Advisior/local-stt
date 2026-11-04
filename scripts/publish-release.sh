@@ -14,7 +14,11 @@
 #   - a published release with all four assets: verify and leave it unchanged.
 #   - a published release lacking assets (created in the web UI before the
 #     workflow ran): upload only the missing ones, never replacing an attached
-#     asset, and stay published. A failure leaves it as it was.
+#     asset, and stay published. Builds are not reproducible, so when only one
+#     half of an archive/checksum pair is attached, the attached half is
+#     downloaded and the other half is only added if they match; otherwise
+#     (or if that check cannot be done) nothing is uploaded. Every pair is
+#     checked before the first upload; a failure leaves the release as it was.
 # To replace assets of a published release, make it a draft by hand and re-run
 # the workflow.
 #
@@ -68,25 +72,93 @@ release_notes() {
         "$section" "$REPO"
 }
 
+WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/publish-release.XXXXXX")"
+trap 'rm -rf "$WORK_DIR"' EXIT
+
 # Prints the ASSETS that the release $1 does not have fully uploaded, one per
-# line; nothing when it is complete.
+# line; nothing when it is complete. Returns non-zero when the lookup fails.
 missing_assets() {
     local attached asset
     attached="$(gh api "repos/$REPO/releases/$1" \
-        --jq '.assets[] | select(.state == "uploaded") | .name')"
+        --jq '.assets[] | select(.state == "uploaded") | .name')" || return 1
     for asset in "${ASSETS[@]}"; do
-        grep -qxF "$asset" <<< "$attached" || echo "$asset"
+        if ! grep -qxF "$asset" <<< "$attached"; then
+            echo "$asset"
+        fi
     done
 }
 
-# Sets the array LACKING to missing_assets of release $1 (bash 3.2 has no
-# mapfile, and the tests run on macOS too).
+# Sets the array LACKING to missing_assets of release $1. The output is
+# captured in a variable first so a failed lookup aborts instead of reading
+# as "nothing missing" (no process substitution, no mapfile: bash 3.2 on
+# macOS runs the tests too).
 read_lacking() {
-    local line
+    local out line
+    out="$(missing_assets "$1")" || die "could not read the assets of release $TAG"
     LACKING=()
     while IFS= read -r line; do
-        [[ -n "$line" ]] && LACKING+=("$line")
-    done < <(missing_assets "$1")
+        if [[ -n "$line" ]]; then
+            LACKING+=("$line")
+        fi
+    done <<< "$out"
+}
+
+is_lacking() {
+    local item
+    for item in "${LACKING[@]}"; do
+        [[ "$item" == "$1" ]] && return 0
+    done
+    return 1
+}
+
+# Prints the digest from a `shasum -a 256` file, lowercased; fails if it is
+# not a SHA-256 hex digest.
+digest_of() {
+    local digest=""
+    read -r digest _ < "$1" || true
+    digest="$(printf '%s' "$digest" | tr 'A-F' 'a-f')"
+    [[ "$digest" =~ ^[0-9a-f]{64}$ ]] || return 1
+    echo "$digest"
+}
+
+# Downloads the attached asset $1 of TAG into WORK_DIR/remote and prints its
+# path; dies (fail closed) when that is not possible.
+fetch_remote() {
+    local dir="$WORK_DIR/remote"
+    mkdir -p "$dir"
+    if ! gh release download "$TAG" --repo "$REPO" --pattern "$1" --dir "$dir" >/dev/null \
+        || [[ ! -f "$dir/$1" ]]; then
+        die "could not download the attached $1 to check it; $TAG left unchanged"
+    fi
+    echo "$dir/$1"
+}
+
+# Prints the files to upload for the archive $1 and its checksum, or dies
+# when only one of them is attached and the attached one does not belong to
+# this build: builds are not reproducible, and install.sh rejects an archive
+# whose checksum does not match.
+plan_pair() {
+    local archive="$1" checksum="$1.sha256" local_digest remote remote_digest
+    local_digest="$(digest_of "$DIST_DIR/$checksum")" || die "malformed $DIST_DIR/$checksum"
+    if is_lacking "$archive" && is_lacking "$checksum"; then
+        echo "$archive"
+        echo "$checksum"
+    elif is_lacking "$checksum"; then
+        # errexit does not reach into $(...) on bash 3.2: exit explicitly.
+        remote="$(fetch_remote "$archive")" || exit 1
+        remote_digest="$(shasum -a 256 "$remote")" || die "could not hash the attached $archive"
+        remote_digest="${remote_digest%% *}"
+        [[ "$remote_digest" == "$local_digest" ]] \
+            || die "the attached $archive does not match this build's $checksum; $TAG left unchanged"
+        echo "$checksum"
+    elif is_lacking "$archive"; then
+        remote="$(fetch_remote "$checksum")" || exit 1
+        remote_digest="$(digest_of "$remote")" \
+            || die "the attached $checksum is malformed; $TAG left unchanged"
+        [[ "$remote_digest" == "$local_digest" ]] \
+            || die "the attached $checksum does not match this build's $archive; $TAG left unchanged"
+        echo "$archive"
+    fi
 }
 
 # 2. Find or create the release for TAG. A failing lookup aborts here
@@ -95,8 +167,7 @@ found="$(find_release)"
 release_id="" is_draft=""
 read -r release_id is_draft <<< "$found" || true
 if [[ -z "$release_id" ]]; then
-    notes_file="$(mktemp "${TMPDIR:-/tmp}/release-notes.XXXXXX")"
-    trap 'rm -f "$notes_file"' EXIT
+    notes_file="$WORK_DIR/release-notes.md"
     release_notes > "$notes_file"
     echo "Creating draft release $TAG..."
     gh release create "$TAG" --repo "$REPO" --draft --verify-tag --title "$TAG" \
@@ -107,7 +178,9 @@ if [[ -z "$release_id" ]]; then
 fi
 [[ "$release_id" =~ ^[0-9]+$ ]] || die "unexpected release id '$release_id'"
 
-# 3a. Published: never downgrade, never replace; only add what is missing.
+# 3a. Published: never downgrade, never replace; only add what is missing,
+# and only what provably belongs with what is attached. Every pair is
+# checked before anything is uploaded.
 if [[ "$is_draft" != "true" ]]; then
     read_lacking "$release_id"
     if [[ ${#LACKING[@]} -eq 0 ]]; then
@@ -115,10 +188,16 @@ if [[ "$is_draft" != "true" ]]; then
         exit 0
     fi
     echo "Release $TAG is published but lacks ${LACKING[*]}; adding them (it stays published)."
-    # ASSETS order: runtime and its checksum before the app zip.
-    for asset in "${LACKING[@]}"; do
-        gh release upload "$TAG" --repo "$REPO" "$DIST_DIR/$asset"
-    done
+    # Runtime pair before the app pair. Each plan is captured in a variable so
+    # a refusal (die in the subshell) stops the script before any upload.
+    runtime_plan="$(plan_pair "$RUNTIME")" || exit 1
+    app_plan="$(plan_pair "$APP")" || exit 1
+    while IFS= read -r asset; do
+        if [[ -n "$asset" ]]; then
+            gh release upload "$TAG" --repo "$REPO" "$DIST_DIR/$asset"
+        fi
+    done <<< "$runtime_plan
+$app_plan"
     read_lacking "$release_id"
     [[ ${#LACKING[@]} -eq 0 ]] || die "$TAG still lacks ${LACKING[*]}"
     echo "Completed $TAG with ${ASSETS[*]}"
