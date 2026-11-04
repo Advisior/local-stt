@@ -92,7 +92,7 @@ class RecordingStoreTests(_DaemonCase):
         self.assertEqual(
             set(meta),
             {"timestamp", "duration_s", "db", "engine", "model", "language",
-             "initial_prompt", "raw_text", "text"},
+             "initial_prompt", "prompt", "raw_text", "text"},
         )
         self.assertEqual(meta["duration_s"], 1.5)
         self.assertEqual(meta["db"], -20.0)
@@ -102,6 +102,14 @@ class RecordingStoreTests(_DaemonCase):
         self.assertEqual(meta["initial_prompt"], "Fachbegriffe")
         self.assertEqual(meta["raw_text"], SECRET)
         self.assertEqual(meta["text"], "Kontonummer siebzehn GEHEIM")
+
+    def test_ac1_given_whisper_prompt_then_sidecar_holds_hint_and_full_prompt(self):
+        self.daemon._engine.initial_prompt = "Fachbegriffe Kubernetes, Advisior"
+        with mock.patch.object(self.daemon._prompt, "refresh"):
+            self.dictate()
+        meta = self.sidecar(self.stems()[0])
+        self.assertEqual(meta["initial_prompt"], "Fachbegriffe")
+        self.assertEqual(meta["prompt"], "Fachbegriffe Kubernetes, Advisior")
 
     def test_ac1_given_moonshine_engine_then_sidecar_names_the_moonshine_model(self):
         self.daemon.config.engine = "moonshine"

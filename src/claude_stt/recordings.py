@@ -2,7 +2,8 @@
 
 Off unless ``debug_keep_recordings`` is a positive integer. Each recording
 that reached the engine is written as ``recordings/<stamp>.wav`` (16 kHz mono
-16-bit PCM) plus a ``<stamp>.json`` sidecar, and only the newest N pairs are
+16-bit PCM) plus a ``<stamp>.json`` sidecar (``initial_prompt`` is the configured hint,
+``prompt`` the full prompt the engine received), and only the newest N pairs are
 kept. Nothing is written in private mode. Audio and sidecar hold personal
 data, so the folder is 0700 and its files 0600.
 """
@@ -48,11 +49,13 @@ def keep(
     raw_text: str = "",
     text: str = "",
     private: bool = False,
+    engine: object = None,
 ) -> None:
     """Store the recording if the debug store is on and private mode is off.
 
     ``private`` marks a dictation the caller already knows is private; the
-    current private mode state is checked as well.
+    current private mode state is checked as well. ``engine`` supplies the
+    prompt it actually used (hint plus vocabulary, #51).
 
     Never raises: a failed write logs the exception type only (no message,
     it could carry a path or text) and the dictation carries on (AC-5).
@@ -62,9 +65,15 @@ def keep(
     if private or history.private_mode_active():
         return
     try:
-        save_recording(audio, config, db=db, raw_text=raw_text, text=text)
+        save_recording(audio, config, db=db, raw_text=raw_text, text=text, prompt=engine_prompt(engine))
     except Exception as exc:
         _logger.warning("Could not store debug recording (%s)", type(exc).__name__)
+
+
+def engine_prompt(engine: object) -> Optional[str]:
+    """The Whisper prompt the engine was given; None for engines without one."""
+    prompt = getattr(engine, "initial_prompt", None)
+    return prompt if isinstance(prompt, str) else None
 
 
 def save_recording(
@@ -74,6 +83,7 @@ def save_recording(
     raw_text: str,
     text: str,
     now: Optional[datetime] = None,
+    prompt: Optional[str] = None,
 ) -> Path:
     """Write WAV and sidecar, then prune to ``debug_keep_recordings``. Returns the WAV path."""
     directory = Config.get_config_dir() / RECORDINGS_DIR
@@ -97,6 +107,7 @@ def save_recording(
             "model": model_name(config),
             "language": config.language,
             "initial_prompt": config.initial_prompt,
+            "prompt": prompt,
             "raw_text": raw_text,
             "text": text,
         }

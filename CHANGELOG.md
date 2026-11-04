@@ -6,11 +6,77 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
-## [0.11.0] - 2026-10-23
+## [0.15.0] - 2026-11-04
 
 ### Added
-- Debug recording store, off by default: with `debug_keep_recordings = N` the daemon keeps the newest N dictations that reached the engine as `recordings/<timestamp>.wav` plus a `.json` sidecar (engine, model, language, prompt, raw and final text) in the config dir. Recordings without speech are kept too, nothing is stored in private mode (a dictation recorded while it was on, even briefly, stays private, also in the history, even if the mode ends before transcription finishes), the folder is 0700 and its files 0600, and a failed write only logs a warning (#50)
-- `scripts/asr_benchmark.py` transcribes a folder of WAVs with several engine, model, language and prompt variants and prints transcript, latency, word error rate against `<name>.ref.txt` with a word diff, and a summary per variant; `language` and `prompt` are rejected for Moonshine and Parakeet, which ignore them; `--json` saves all results (#50)
+- Debug recording store, off by default: with `debug_keep_recordings = N` the daemon keeps the newest N dictations that reached the engine as `recordings/<timestamp>.wav` plus a `.json` sidecar (engine, model, language, `initial_prompt` hint, the full prompt the engine received, raw and final text) in the config dir. Recordings without speech are kept too, nothing is stored in private mode (a dictation recorded while it was on, even briefly, stays private, also in the history, even if the mode ends before transcription finishes), the folder is 0700 and its files 0600, and a failed write only logs a warning (#50)
+- `scripts/asr_benchmark.py` transcribes a folder of WAVs with several engine, model, language and prompt variants and prints transcript, latency, word error rate against `<name>.ref.txt` with a word diff, and a summary per variant; `prompt=config` uses the prompt the daemon builds (hint plus vocabulary), any other prompt is passed as is without the config's vocabulary; `language` and `prompt` are rejected for Moonshine and Parakeet, which ignore them; `--json` saves all results (#50)
+
+## [0.14.0] - 2026-11-04
+
+### Added
+- Esc cancels a running recording on macOS: the audio is dropped, nothing is transcribed, typed or added to history, and that Esc press does not reach the focused app. Outside a recording, and with modifiers, Esc passes through unchanged (#60)
+- The recording overlay shows a live microphone level meter and, in private mode, an eye-slash symbol (#60)
+
+### Changed
+- The recording overlay is a native HUD: a non-activating panel with the `.hudWindow` material, shaped as a capsule at the bottom center of the main screen, with system colors for light, dark and Increase Contrast. A steady red dot replaces the blinking one, the time reads `m:ss`, the capsule sizes itself to its text, and the states read "Transcribing…", "Inserted n words" or "Copied n words" (#60)
+- With Reduce Motion on, the overlay shows a static microphone and "Listening" instead of the meter and no spinner (#60)
+- The overlay carries VoiceOver labels and announces recording, transcribing, the result and hints (#60)
+
+### Fixed
+- When the transcription could not be delivered, the overlay says "Could not insert text" instead of a word count (#60)
+
+## [0.13.0] - 2026-11-04
+
+### Added
+- Releases publish `Local-STT-runtime-vX.Y.Z-macos-arm64.tar.gz` and its `.sha256`: a relocatable CPython 3.12 (python-build-standalone, pinned version and SHA-256) with Local-STT and its `mlx` and `macos` dependencies preinstalled from hash-locked requirements, built for macOS 13 or later on Apple Silicon. `scripts/build-runtime.sh` builds it, `scripts/lock-runtime.sh` regenerates the locks. The release workflow publishes a release only after both built and the runtime, the app zip and both checksums are attached; until then the release is a draft, which `releases/latest` and so `install.sh` never use. Re-runs leave a complete published release unchanged, never turn a published release back into a draft, and only add a missing archive or checksum when it matches the one already attached (#63)
+- `install.sh` installs that runtime to `~/Library/Application Support/Local-STT/venv`, so the default remote install needs neither `git` nor `python3` nor `uv`. The runtime is only used after its SHA-256 matches and it reports the release version; otherwise the script prints the reason and sets up Python with `uv`/`python3` from a source checkout as before. `--from-source`, `--build-only` and runs from a local checkout keep that source setup (#63)
+
+## [0.12.0] - 2026-11-03
+
+### Added
+- New `vocabulary` list in `[claude-stt]`. The daemon builds the Whisper prompt from the `initial_prompt` hint followed by as many vocabulary terms as fit Whisper's 223-token prompt, so the hint is no longer cut off. Terms that do not fit are dropped from the end, listed as a warning in `daemon.log` and shown under Vocabulary in Settings; a hint that alone exceeds the budget is reported the same way (#51)
+- New opt-in `vocabulary_from_corrections` (default `false`) appends the right-hand side of each `[corrections]` entry to the vocabulary, after the `vocabulary` terms (#51)
+- Edits to `vocabulary` and corrections added in History reach the Whisper prompt from the next dictation, without a daemon restart (#51)
+- Saving from the menu bar app keeps the `vocabulary` and `vocabulary_from_corrections` lines of `config.toml` as they are, values spanning lines (arrays, multi-line strings) included (#51)
+
+### Changed
+- `initial_prompt` is documented as the short style and language hint. Existing configs with a single `initial_prompt` behave exactly as before and are not rewritten (#51)
+- Without the MLX Whisper tokenizer (for example with faster-whisper), prompt tokens are counted as UTF-8 bytes, an upper bound, so the budget is never exceeded (#51)
+
+## [0.11.6] - 2026-10-31
+
+### Security
+- Releases publish `Local-STT-vX.Y.Z.zip.sha256` next to the app zip, and `install.sh` checks the downloaded zip against it before unpacking. A missing, malformed or different checksum is reported as the reason and the app is built from source instead (#69)
+
+## [0.11.5] - 2026-10-31
+
+### Fixed
+- After the input device drops, errors or changes, the next dictation records from the current default input again without restarting Local-STT. A stream that sent no audio for 1 s is closed, PortAudio is re-initialized so it re-reads the device list, and a new stream opens on the configured device or the current default, at recording start and once during a running recording (audio from before the gap is kept). A recording that ended without audio also reopens the stream (#44)
+- On macOS the daemon follows changes of the system default input (for example AirPods to built-in mic) within 3 s while idle, unless `audio_device` is set (#44)
+- When the reopen fails or the new stream stays silent, the recording ends, the overlay shows "No microphone input. Check the input device.", the error sound plays and `daemon.log` names the device (#44)
+
+## [0.11.4] - 2026-10-31
+
+### Changed
+- `install.sh` installs the prebuilt `Local-STT.app` from the GitHub release that matches the checked-out version instead of compiling it, so a Mac with only the Command Line Tools (no Xcode) can install Local-STT. The remote install checks out the latest release tag instead of `main`. The bundle identifier and version are verified; on any download, unpack or verification error the script prints the reason and builds from source as before. `--from-source`, `--build-only` and runs from a local checkout still build with `scripts/build-app.sh` (#35)
+
+## [0.11.2] - 2026-10-31
+
+### Changed
+- Internal: the macOS key event intercept moved from `hotkey.py` to `hotkey_darwin.py`, and its tests moved to `tests/test_hotkey_darwin.py`, so both `hotkey.py` and `tests/test_hotkey.py` are below the 500-line limit again. No behavior change (#71)
+
+## [0.11.1] - 2026-10-31
+
+### Fixed
+- A hotkey that mixes a generic and a side-specific modifier, such as `ctrl+cmd_r`, now needs every listed key. Before, `ctrl` was dropped and the hotkey fired on `cmd_r` alone. `ctrl` accepts either Control key, `cmd_r` only the right Command key (#70)
+
+## [0.9.3] - 2026-10-23
+
+### Fixed
+- macOS: a hotkey ending in a character key (e.g. `ctrl+shift+r`) no longer reaches the focused app. The key's down, auto-repeat and up events are swallowed using the keycode of the actual press, so it works with any keyboard layout (#41)
+- macOS: generic modifiers in a hotkey (`ctrl`, `shift`, `alt`, `cmd`) cover both the left and the right key, so completing a combination with the right-hand modifier no longer leaks that key to the app. Side-specific hotkeys such as `cmd_r` still swallow only the named side (#41)
+- macOS: modifier events are classified as press or release from the key's own device flag bit. After a lost release, the next press of that modifier is no longer swallowed unless it completes a hotkey again (#41)
 
 ## [0.9.0] - 2026-10-20
 

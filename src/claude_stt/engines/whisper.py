@@ -88,8 +88,11 @@ class WhisperEngine:
             transcribe_kwargs = {}
             if self.language:
                 transcribe_kwargs["language"] = self.language
-            if self.initial_prompt:
-                transcribe_kwargs["initial_prompt"] = self.initial_prompt
+            # The env prompt is the fallback here too: the daemon may set
+            # initial_prompt to None when the config has no prompt (#51).
+            prompt = self.initial_prompt or os.environ.get("CLAUDE_STT_INITIAL_PROMPT")
+            if prompt:
+                transcribe_kwargs["initial_prompt"] = prompt
             segments, _info = self._model.transcribe(audio, **transcribe_kwargs)
             text = " ".join(segment.text.strip() for segment in segments)
             return text.strip()

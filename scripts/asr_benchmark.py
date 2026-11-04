@@ -15,7 +15,10 @@ A variant spec is ``key=value`` pairs separated by commas:
     model     model name for that engine (default: config.toml)
     language  language code, ``auto`` for detection (default: config.toml)
     prompt    literal text, ``@path`` to read a file, ``config`` for the
-              initial_prompt from config.toml (default: no prompt)
+              prompt the daemon builds from config.toml (initial_prompt hint
+              plus vocabulary, #51) (default: no prompt)
+A variant's prompt is passed to the engine as is; the config's vocabulary is
+not appended to it.
 A comma only starts a new pair when ``<key>=`` follows it, so a literal prompt
 may contain commas. Use ``@path`` for prompts that contain ``word=``.
 
@@ -45,6 +48,7 @@ import numpy as np
 from claude_stt.config import Config
 from claude_stt.engine_factory import build_engine
 from claude_stt.errors import EngineError
+from claude_stt.prompt import effective_prompt
 
 VARIANT_KEYS = ("engine", "model", "language", "prompt")
 ENGINES = ("moonshine", "whisper", "mlx", "parakeet")
@@ -110,7 +114,7 @@ def parse_variant(spec: str, base: Config) -> Variant:
 
 def _resolve_prompt(spec: str, raw: str, base: Config) -> Optional[str]:
     if raw == "config":
-        return base.initial_prompt or None
+        return effective_prompt(base) or None
     if raw.startswith("@"):
         path = Path(raw[1:]).expanduser()
         try:
@@ -127,6 +131,9 @@ def variant_config(variant: Variant, base: Config) -> Config:
         engine=variant.engine,
         language=variant.language,
         initial_prompt=variant.prompt,
+        # The variant prompt is complete; build_engine must not append vocabulary.
+        vocabulary=[],
+        vocabulary_from_corrections=False,
         corrections=dict(base.corrections),
         **{_model_field(variant.engine): variant.model},
     )

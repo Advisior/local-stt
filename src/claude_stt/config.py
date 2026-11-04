@@ -77,7 +77,9 @@ class Config:
 
     # Language settings
     language: str | None = None
-    initial_prompt: str | None = None
+    initial_prompt: str | None = None  # style and language hint (#51)
+    vocabulary: list = field(default_factory=list)  # terms appended within the token budget
+    vocabulary_from_corrections: bool = False  # also add [corrections] targets
     corrections: dict = field(default_factory=dict)
 
     # Debug store of real dictations for ASR benchmarks (#50): keep the
@@ -100,6 +102,19 @@ class Config:
             self.corrections = {str(k): str(v) for k, v in data.get("corrections", {}).items()}
         except Exception:
             pass
+
+    def reload_vocabulary(self) -> None:
+        """Hot-reload vocabulary keys from [claude-stt]; keep values if unreadable."""
+        if tomli is None:
+            return
+        try:
+            with open(self.get_config_path(), "rb") as f:
+                section = tomli.load(f).get("claude-stt", {})
+        except Exception:
+            return
+        self.vocabulary = section.get("vocabulary", [])
+        self.vocabulary_from_corrections = section.get("vocabulary_from_corrections", False)
+        self._validate_vocabulary()
 
     @classmethod
     def get_config_dir(cls) -> Path:
@@ -174,6 +189,10 @@ class Config:
                 mute_on_record=stt_config.get("mute_on_record", cls.mute_on_record),
                 language=stt_config.get("language", cls.language),
                 initial_prompt=stt_config.get("initial_prompt", cls.initial_prompt),
+                vocabulary=stt_config.get("vocabulary", []),
+                vocabulary_from_corrections=stt_config.get(
+                    "vocabulary_from_corrections", cls.vocabulary_from_corrections
+                ),
                 corrections=corrections,
                 debug_keep_recordings=stt_config.get("debug_keep_recordings", 0),
             )
@@ -226,6 +245,10 @@ class Config:
             section["language"] = self.language
         if self.initial_prompt:
             section["initial_prompt"] = self.initial_prompt
+        if self.vocabulary:
+            section["vocabulary"] = list(self.vocabulary)
+        if self.vocabulary_from_corrections:
+            section["vocabulary_from_corrections"] = True
         if self.debug_keep_recordings > 0:
             section["debug_keep_recordings"] = self.debug_keep_recordings
 
@@ -302,6 +325,7 @@ class Config:
             self.output_mode = "auto"
 
         self._validate_undo()
+        self._validate_vocabulary()
 
         value = self.debug_keep_recordings
         # bool is an int subclass; `true` is not a count
@@ -342,6 +366,19 @@ class Config:
             self.sample_rate = 16000
 
         return self
+
+    def _validate_vocabulary(self) -> None:
+        if isinstance(self.vocabulary, str):
+            self.vocabulary = self.vocabulary.split(",")
+        if not isinstance(self.vocabulary, (list, tuple)):
+            logger.warning("Invalid vocabulary; expected a list of strings")
+            self.vocabulary = []
+        self.vocabulary = [
+            term.strip() for term in self.vocabulary if isinstance(term, str) and term.strip()
+        ]
+        if not isinstance(self.vocabulary_from_corrections, bool):
+            logger.warning("Invalid vocabulary_from_corrections; defaulting to false")
+            self.vocabulary_from_corrections = False
 
     def _validate_undo(self) -> None:
         if not isinstance(self.undo_hotkey, str):

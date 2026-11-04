@@ -152,6 +152,20 @@ class BenchmarkRunTests(_BenchCase):
         moon = bench.variant_config(bench.parse_variant("engine=moonshine,model=moonshine/tiny", base), base)
         self.assertEqual(moon.moonshine_model, "moonshine/tiny")
 
+    def test_ac9_given_prompt_config_then_vocabulary_is_appended_as_in_the_daemon(self):
+        base = bench.Config(engine="mlx", initial_prompt="cfg", vocabulary=["Kubernetes", "Advisior"])
+        variant = bench.parse_variant("prompt=config", base)
+        self.assertEqual(variant.prompt, "cfg Kubernetes, Advisior")
+
+    def test_ac9_given_variant_prompt_then_engine_gets_it_without_config_vocabulary(self):
+        base = bench.Config(engine="mlx", initial_prompt="cfg", vocabulary=["Kubernetes"],
+                            vocabulary_from_corrections=True, corrections={"a": "B"})
+        for spec, expected in (("prompt=eigener", "eigener"), ("model=large-v3", None)):
+            with self.subTest(spec=spec):
+                config = bench.variant_config(bench.parse_variant(spec, base), base)
+                self.assertEqual(bench.effective_prompt(config), expected)
+        self.assertEqual(base.vocabulary, ["Kubernetes"])
+
     def test_ac9_given_language_or_prompt_for_engine_without_them_then_parse_fails(self):
         for spec in ("engine=moonshine,language=de", "engine=parakeet,prompt=Fachbegriffe"):
             with self.subTest(spec=spec), self.assertRaises(bench.SpecError) as ctx:

@@ -42,9 +42,9 @@ Run this in Terminal:
 curl -fsSL https://raw.githubusercontent.com/Advisior/local-stt/main/install.sh | bash
 ```
 
-This sets up a self-contained Python environment under `~/Library/Application Support/Local-STT/`, builds the menu bar app from source, and installs it to `/Applications`. It needs the Xcode Command Line Tools (`xcode-select --install` if you don't have them) and works with or without Homebrew/`uv` already installed — the script tells you what's missing if anything is.
+This installs the standalone Python runtime of the latest release (a relocatable CPython 3.12 with Local-STT and its dependencies preinstalled, checked against its published SHA-256) to `~/Library/Application Support/Local-STT/venv`, so `git`, `python3` and `uv` are not needed, and installs the prebuilt menu bar app of that release to `/Applications`. The runtime download is large (several hundred MB). When the release has no runtime or it fails a check, the script prints the reason and sets up the Python environment from a source checkout instead, which needs `git` and `uv` or Python 3.11-3.13 (it installs `uv` with Homebrew if needed); the script tells you what's missing. Pass `--from-source` (development, or when you run `install.sh` from a local checkout) to build the app yourself; that needs the Swift toolchain, and the script also builds from source when the release download fails.
 
-**macOS 27:** the SDK that ships with the Command Line Tools can no longer build the menu bar app (SwiftUI's `@State` became a macro whose compiler plugin comes only with Xcode). Install Xcode before running the script, see [#35](https://github.com/Advisior/local-stt/issues/35).
+**macOS 27, source build only:** the SDK that ships with the Command Line Tools can no longer build the menu bar app (SwiftUI's `@State` became a macro whose compiler plugin comes only with Xcode). Install Xcode before building from source, see [#35](https://github.com/Advisior/local-stt/issues/35).
 
 **Note:** On first launch, macOS will show "app from an unidentified developer" (this build is ad-hoc signed, not notarized). Right-click the app in `/Applications` > Open > Open to bypass Gatekeeper once.
 
@@ -58,6 +58,8 @@ A plain zip download of the app alone will not work — see [Development](#devel
 2. **Grant permissions** when macOS prompts you (see [Permissions](#required-permissions) below)
 3. **Open Settings** (click the menu bar icon > Settings) to configure your hotkey, language, and vocabulary
 4. **Press your hotkey** (default: `ctrl+shift+space` in toggle mode: press to start, press again to stop), speak — text appears at your cursor
+
+On macOS a small capsule at the bottom center of the screen shows the recording: a red dot, a level meter, the elapsed time and an `esc` hint. Press **Esc** while recording to cancel; the audio is dropped and nothing is typed. With Reduce Motion on, the capsule shows a static microphone and "Listening" instead of the moving meter. In private mode it adds an eye-slash symbol.
 
 Fresh installs on Apple Silicon use **MLX Whisper** (`large-v3-turbo`), which understands German and many other languages. Where MLX is not available (Intel Macs, Linux, Windows) the default is **Moonshine**, which understands **English only**. An existing `config.toml` keeps the engine it already names.
 
@@ -113,7 +115,9 @@ For advanced users, the config file is at `~/.config/local-stt/config.toml` and 
 | `engine` | `mlx` on Apple Silicon, else `moonshine` | STT engine: `mlx`, `whisper`, `moonshine`, `parakeet`. Moonshine is English-only; use `mlx` for other languages |
 | `whisper_model` | `large-v3-turbo` on Apple Silicon, else `medium` | Model size: `tiny`, `base`, `small`, `medium`, `large`, `large-v3`, `large-v3-turbo` |
 | `language` | auto-detect | Recognition language (2-letter code); omit the key for auto-detect (an empty string is not valid) |
-| `initial_prompt` | — | Comma-separated vocabulary terms to improve recognition |
+| `initial_prompt` | — | Short style and language hint for Whisper, placed first in the prompt |
+| `vocabulary` | `[]` | Terms Whisper should know, most important first; appended after the hint as long as they fit Whisper's prompt |
+| `vocabulary_from_corrections` | `false` | Also append the right-hand side of each `[corrections]` entry to the vocabulary |
 | `sound_effects` | `true` | Audio feedback on recording start/stop |
 | `output_mode` | `auto` | Text insertion: `auto`, `injection` (keyboard), `clipboard`, `clipboard_paste` (clipboard + Cmd+V, most compatible) |
 | `max_recording_seconds` | `300` | Maximum recording duration in seconds |
@@ -135,13 +139,21 @@ Otherwise the overlay shows "Nothing to undo" or "Too long to undo" and the log 
 
 ### Custom Vocabulary
 
-The `initial_prompt` tells Whisper which domain-specific terms you use. This dramatically improves recognition of technical words:
+Whisper reads at most 223 prompt tokens and silently cuts the *beginning* of a longer prompt. Keep `initial_prompt` (the Vocabulary field in Settings) to a short style and language hint, and list the terms in `vocabulary`:
 
 ```toml
-initial_prompt = "TypeScript, React, Kubernetes, PostgreSQL, GraphQL, WebSocket, CI/CD Pipeline, OAuth, Terraform"
+[claude-stt]
+initial_prompt = "Gesprochener Text auf Deutsch."
+vocabulary = ["TypeScript", "Kubernetes", "PostgreSQL", "GraphQL", "Terraform"]
+vocabulary_from_corrections = true   # optional, default false
+
+[corrections]
+"Brot" = "Prod"
 ```
 
-Keep it under ~500 characters. Only add terms that Whisper would otherwise misspell.
+The daemon builds the prompt as hint, then terms in order (`vocabulary` first, correction targets after it). The hint is always kept. When the terms do not fit, the remaining ones are left out, `daemon.log` lists them and Settings shows a warning under Vocabulary. Edits to `vocabulary` and new corrections apply from the next dictation, without a restart. Only add terms that Whisper would otherwise misspell. Settings does not edit `vocabulary` yet; edit `config.toml` directly. Saving from the app keeps both keys.
+
+Existing configs with a single `initial_prompt` keep working unchanged: it is used as the hint and nothing is rewritten. If it is longer than the budget, the log and Settings warn; move the proper nouns into `vocabulary`. `[corrections]` are still applied after transcription as before.
 
 ### Debug recordings and benchmark
 
@@ -153,7 +165,7 @@ To decide on a model or prompt with numbers instead of guesses, the daemon can k
 debug_keep_recordings = 20
 ```
 
-Every recording that reaches the engine is then written to `~/.config/local-stt/recordings/` as `<timestamp>.wav` (16 kHz mono 16-bit PCM) plus `<timestamp>.json` with duration, level, engine, model, language, prompt, the raw engine output and the final text. Recordings without recognized speech are kept too. Only the newest N pairs stay; older ones are deleted after each write. Nothing is stored in private mode. `0`, a missing key or an invalid value (negative, not an integer) means off.
+Every recording that reaches the engine is then written to `~/.config/local-stt/recordings/` as `<timestamp>.wav` (16 kHz mono 16-bit PCM) plus `<timestamp>.json` with duration, level, engine, model, language, the `initial_prompt` hint, the full `prompt` the engine received (hint plus vocabulary), the raw engine output and the final text. Recordings without recognized speech are kept too. Only the newest N pairs stay; older ones are deleted after each write. Nothing is stored in private mode. `0`, a missing key or an invalid value (negative, not an integer) means off.
 
 These files are personal data: your voice and everything you said. The folder is readable only by your user (0700, files 0600) and never leaves the device. To delete everything, remove the folder: `rm -rf ~/.config/local-stt/recordings`. To stop recording, set `debug_keep_recordings = 0` or remove the line and restart the daemon. The menu bar Settings do not know this key yet and drop it when they save, so set it again after changing settings there.
 
@@ -166,7 +178,7 @@ uv run python scripts/asr_benchmark.py ~/stt-samples \
   --json results.json
 ```
 
-A variant is `key=value` pairs separated by commas. Keys: `engine`, `model`, `language` (`auto` = detect) and `prompt` (literal text, `@path` to read a file, `config` for `initial_prompt` from `config.toml`). Missing `engine`, `model` and `language` come from `config.toml`; a missing `prompt` means no prompt. The script prints transcript, latency and word error rate (WER) per file and variant, a word diff (`-wrong +right`) for every file with errors, and a summary per variant. WER is the word-level edit distance after lowercasing and removing punctuation, divided by the number of reference words. Files without `.ref.txt`, or with an empty one, show `WER n/a`. Exit code 1 means no WAV in the folder, 2 an invalid variant. All variants load their models before the first transcription, so a broken variant fails fast, but several large models need memory at the same time. The first run of a model may download it.
+A variant is `key=value` pairs separated by commas. Keys: `engine`, `model`, `language` (`auto` = detect) and `prompt` (literal text, `@path` to read a file, `config` for the prompt the daemon builds from `config.toml`, hint plus vocabulary). A variant's prompt goes to the engine as is, the `vocabulary` from `config.toml` is not appended to it. Missing `engine`, `model` and `language` come from `config.toml`; a missing `prompt` means no prompt. The script prints transcript, latency and word error rate (WER) per file and variant, a word diff (`-wrong +right`) for every file with errors, and a summary per variant. WER is the word-level edit distance after lowercasing and removing punctuation, divided by the number of reference words. Files without `.ref.txt`, or with an empty one, show `WER n/a`. Exit code 1 means no WAV in the folder, 2 an invalid variant. All variants load their models before the first transcription, so a broken variant fails fast, but several large models need memory at the same time. The first run of a model may download it.
 
 ---
 
