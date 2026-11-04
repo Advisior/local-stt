@@ -6,11 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
-## [0.12.0] - 2026-11-03
+## [0.13.0] - 2026-11-04
 
 ### Added
 - Releases publish `Local-STT-runtime-vX.Y.Z-macos-arm64.tar.gz` and its `.sha256`: a relocatable CPython 3.12 (python-build-standalone, pinned version and SHA-256) with Local-STT and its `mlx` and `macos` dependencies preinstalled from hash-locked requirements, built for macOS 13 or later on Apple Silicon. `scripts/build-runtime.sh` builds it, `scripts/lock-runtime.sh` regenerates the locks. The release workflow publishes a release only after both built and the runtime, the app zip and both checksums are attached; until then the release is a draft, which `releases/latest` and so `install.sh` never use. Re-runs leave a complete published release unchanged, never turn a published release back into a draft, and only add a missing archive or checksum when it matches the one already attached (#63)
 - `install.sh` installs that runtime to `~/Library/Application Support/Local-STT/venv`, so the default remote install needs neither `git` nor `python3` nor `uv`. The runtime is only used after its SHA-256 matches and it reports the release version; otherwise the script prints the reason and sets up Python with `uv`/`python3` from a source checkout as before. `--from-source`, `--build-only` and runs from a local checkout keep that source setup (#63)
+
+## [0.12.0] - 2026-11-03
+
+### Added
+- New `vocabulary` list in `[claude-stt]`. The daemon builds the Whisper prompt from the `initial_prompt` hint followed by as many vocabulary terms as fit Whisper's 223-token prompt, so the hint is no longer cut off. Terms that do not fit are dropped from the end, listed as a warning in `daemon.log` and shown under Vocabulary in Settings; a hint that alone exceeds the budget is reported the same way (#51)
+- New opt-in `vocabulary_from_corrections` (default `false`) appends the right-hand side of each `[corrections]` entry to the vocabulary, after the `vocabulary` terms (#51)
+- Edits to `vocabulary` and corrections added in History reach the Whisper prompt from the next dictation, without a daemon restart (#51)
+- Saving from the menu bar app keeps the `vocabulary` and `vocabulary_from_corrections` lines of `config.toml` as they are, values spanning lines (arrays, multi-line strings) included (#51)
+
+### Changed
+- `initial_prompt` is documented as the short style and language hint. Existing configs with a single `initial_prompt` behave exactly as before and are not rewritten (#51)
+- Without the MLX Whisper tokenizer (for example with faster-whisper), prompt tokens are counted as UTF-8 bytes, an upper bound, so the budget is never exceeded (#51)
 
 ## [0.11.6] - 2026-10-31
 
