@@ -56,7 +56,7 @@ jobs:
             shasum -a 256 "$zip" > "$zip.sha256"
           done
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-app
           path: |
@@ -93,7 +93,7 @@ jobs:
       - name: Build standalone runtime
         run: bash scripts/build-runtime.sh
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-runtime
           path: |
